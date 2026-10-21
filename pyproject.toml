@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools >= 77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "datalab-synchrotron"
+version = "0.1.0"
+description = "Read beamline data (SPEC scans and MCA spectra) and analyze it in DataLab"
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+dependencies = ["datalab-platform >= 1.4, < 2"]
+keywords = ["datalab", "datalab-plugin", "synchrotron", "spec", "beamline"]
+
+[project.urls]
+Homepage = "https://github.com/DataLab-Platform/datalab-synchrotron"
+Issues = "https://github.com/DataLab-Platform/datalab-synchrotron/issues"
+
+[project.entry-points."datalab.plugins"]
+datalab_synchrotron = "datalab_synchrotron.adapters.desktop:SynchrotronPlugin"
+
+[project.optional-dependencies]
+test = ["build >= 1.2", "pytest", "ruff", "silx"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
