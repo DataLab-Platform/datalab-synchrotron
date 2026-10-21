@@ -2,7 +2,7 @@
 
 A [DataLab](https://datalab-platform.com/) plugin to read beamline data and analyze it in DataLab.
 
-> **Status: Alpha.** The SPEC reader is validated against silx on synthetic files, and the X-ray absorption analysis against Larch on measured spectra. Beamline profiles will follow.
+> **Example plugin.** This plugin shows how DataLab can read beamline data and run a beamline analysis. It is a demonstration, not a finished or supported feature: its scope is limited to what is described below, its results are validated only by the tests described in [CONTRIBUTING](CONTRIBUTING.md) (SPEC reader compared with silx on synthetic files, X-ray absorption analysis compared with Larch on measured spectra), and its interface may change without notice.
 
 ## What it does
 
