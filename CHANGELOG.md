@@ -15,3 +15,4 @@ First version of the Synchrotron Beamline Data plugin.
 - **Plugins > Synchrotron Beamline Data > Absorption from counters...** and **Edge normalization...** recipes: `mu(E)` from the selected monitor and detector counts (monitor recognized by its name, counters of different scans refused, invalid points listed); normalized and flattened spectra with a results table (E0, edge step, fit ranges and degree), automatic or given E0 and ranges.
 - XDI reader (XAS Data Interchange 1.x) in pure Python, and **File > Open** of `.xdi` files in the signal panel: one signal per column versus the energy, with units and origin (element, edge, beamline, sample...).
 - **Open copper foil example**: measured counts of a copper foil (Larch examples) to try the absorption and normalization recipes.
+- Application tiles on DataLab's welcome page: the plugin, **Import SPEC scans** and **Open copper foil example**, with their icons.

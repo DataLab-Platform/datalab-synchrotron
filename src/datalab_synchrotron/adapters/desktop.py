@@ -10,6 +10,7 @@ from datalab.config import _
 from datalab.plugins import PluginBase, PluginCapability, PluginInfo
 from datalab.plugins.examples import PluginExample, PluginExampleData
 from datalab.plugins.recipes import RecipeOutcome
+from datalab.plugins.tiles import WelcomeTile
 from datalab.utils.qthelpers import create_progress_bar
 from qtpy import QtWidgets as QW
 from qtpy.compat import getopenfilename
@@ -37,6 +38,10 @@ from ..workflow import RECIPES as WORKFLOW_RECIPES
 
 #: Number of signals added to the workspace at once by the SPEC import
 ADD_BATCH_SIZE = 200
+
+PLUGIN_ICON = "datalab_synchrotron:icons/synchrotron.svg"
+SPEC_IMPORT_ICON = "datalab_synchrotron:icons/spec_import.svg"
+EXAMPLE_ICON = "datalab_synchrotron:icons/xas_example.svg"
 
 
 def _import_parameters(spec: SpecFile) -> gds.DataSet:
@@ -75,11 +80,38 @@ class SynchrotronPlugin(PluginBase):
         name=PLUGIN_NAME,
         version=__version__,
         description=PLUGIN_DESCRIPTION,
-        capabilities=(PluginCapability.IO, PluginCapability.PROCESSING),
+        icon=PLUGIN_ICON,
+        capabilities=(
+            PluginCapability.APPLICATION,
+            PluginCapability.IO,
+            PluginCapability.PROCESSING,
+        ),
         documentation_url="https://github.com/DataLab-Platform/datalab-synchrotron",
     )
     RECIPES = WORKFLOW_RECIPES
     EXAMPLES = WORKFLOW_EXAMPLES
+    WELCOME_TILES = (
+        WelcomeTile(
+            id="application",
+            title=PLUGIN_NAME,
+            description=PLUGIN_DESCRIPTION,
+            icon=PLUGIN_ICON,
+        ),
+        WelcomeTile(
+            id="import-spec",
+            title=_("Import SPEC scans"),
+            description=_("Scans, counters and MCA spectra, one group per scan"),
+            icon=SPEC_IMPORT_ICON,
+            launcher="import_spec_scans",
+        ),
+        WelcomeTile(
+            id="cu-foil-example",
+            title=_("Open copper foil example"),
+            description=_("Measured X-ray absorption counts to try the recipes"),
+            icon=EXAMPLE_ICON,
+            launcher="open_cu_foil_example",
+        ),
+    )
 
     @classmethod
     def materialize_example(cls, example_id: str) -> PluginExampleData | None:

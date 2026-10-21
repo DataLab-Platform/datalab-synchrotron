@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from importlib import resources
 from pathlib import Path
 
 import h5py
@@ -22,15 +23,36 @@ from datalab_synchrotron.mappings import packaged_mappings
 
 
 def test_plugin_descriptor() -> None:
-    """The entry point declares an I/O and processing plugin with its recipes."""
+    """The entry point declares an application, I/O and processing plugin with its
+    recipes."""
     assert desktop.SynchrotronPlugin.get_plugin_id() == PLUGIN_ID
     assert desktop.SynchrotronPlugin.PLUGIN_INFO.capabilities == frozenset(
-        {PluginCapability.IO, PluginCapability.PROCESSING}
+        {
+            PluginCapability.APPLICATION,
+            PluginCapability.IO,
+            PluginCapability.PROCESSING,
+        }
     )
     assert [recipe.local_id for recipe in desktop.SynchrotronPlugin.get_recipes()] == [
         "xas-absorption",
         "xas-normalization",
     ]
+
+
+def test_icons_and_welcome_tiles() -> None:
+    """The welcome page shows the application, SPEC import and example tiles, with
+    icons shipped with the package."""
+    plugin_class = desktop.SynchrotronPlugin
+    tiles = plugin_class.get_welcome_tiles()
+    assert [(tile.id, tile.launcher) for tile in tiles] == [
+        ("application", None),
+        ("import-spec", "import_spec_scans"),
+        ("cu-foil-example", "open_cu_foil_example"),
+    ]
+    assert plugin_class.PLUGIN_INFO.icon == desktop.PLUGIN_ICON
+    for icon in {desktop.PLUGIN_ICON, *(tile.icon for tile in tiles)}:
+        package, path = icon.split(":")
+        assert resources.files(package).joinpath(path).is_file()
 
 
 def _patch_parameters(
