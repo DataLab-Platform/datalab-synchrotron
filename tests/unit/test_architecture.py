@@ -65,3 +65,17 @@ def test_core_is_portable() -> None:
         if any(name == p or name.startswith(f"{p}.") for p in FORBIDDEN_IN_CORE)
     ]
     assert not violations, "\n".join(violations)
+
+
+def test_workflow_is_headless() -> None:
+    """Recipes use DataLab's headless contracts only, not its user interface."""
+    allowed = ("datalab.plugins.recipes",)
+    forbidden = (*FORBIDDEN_IN_CORE, f"{PACKAGE_NAME}.mappings")
+    violations = [
+        f"{filename.relative_to(PACKAGE_ROOT)} imports {name}"
+        for filename in sorted((PACKAGE_ROOT / "workflow").rglob("*.py"))
+        for name in sorted(_module_imports(filename))
+        if name not in allowed
+        and any(name == p or name.startswith(f"{p}.") for p in forbidden)
+    ]
+    assert not violations, "\n".join(violations)

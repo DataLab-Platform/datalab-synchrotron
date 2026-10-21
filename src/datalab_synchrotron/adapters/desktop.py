@@ -7,12 +7,15 @@ import os.path as osp
 import guidata.dataset as gds
 from datalab.config import _
 from datalab.plugins import PluginBase, PluginCapability, PluginInfo
+from datalab.plugins.recipes import RecipeOutcome
 from qtpy.compat import getopenfilename
 
 from .. import PLUGIN_DESCRIPTION, PLUGIN_ID, PLUGIN_NAME, __version__
 from ..core import SpecFile, is_spec_file, plan_scan_import, select_scans
 from ..formats import unregister_formats
 from ..mappings import register_mappings, unregister_mappings
+from ..workflow import ABSORPTION_RECIPE, NORMALIZATION_RECIPE
+from ..workflow import RECIPES as WORKFLOW_RECIPES
 
 
 def _import_parameters(spec: SpecFile) -> gds.DataSet:
@@ -49,9 +52,10 @@ class SynchrotronPlugin(PluginBase):
         name=PLUGIN_NAME,
         version=__version__,
         description=PLUGIN_DESCRIPTION,
-        capabilities=(PluginCapability.IO,),
+        capabilities=(PluginCapability.IO, PluginCapability.PROCESSING),
         documentation_url="https://github.com/DataLab-Platform/datalab-synchrotron",
     )
+    RECIPES = WORKFLOW_RECIPES
 
     def register_hooks(self) -> None:
         """Apply the shipped HDF5 data mappings."""
@@ -110,8 +114,16 @@ class SynchrotronPlugin(PluginBase):
             )
         return count
 
+    def run_absorption(self) -> RecipeOutcome | None:
+        """Compute the absorption from the selected monitor and detector."""
+        return self.start_recipe(ABSORPTION_RECIPE.recipe_id)
+
+    def run_normalization(self) -> RecipeOutcome | None:
+        """Normalize the selected absorption spectra."""
+        return self.start_recipe(NORMALIZATION_RECIPE.recipe_id)
+
     def create_actions(self) -> None:
-        """Create the import action of the signal panel."""
+        """Create the import and analysis actions of the signal panel."""
         handler = self.signalpanel.acthandler
         with handler.new_menu(PLUGIN_NAME.replace("&", "&&")):
             self.import_spec_action = handler.new_action(
@@ -121,4 +133,17 @@ class SynchrotronPlugin(PluginBase):
                     "Import columns and MCA spectra of SPEC scans, one group per scan"
                 ),
                 select_condition="always",
+            )
+            self.absorption_action = handler.new_action(
+                _("Absorption from counters..."),
+                triggered=self.run_absorption,
+                tip=_("Compute mu(E) from monitor and detector counts"),
+                select_condition="at_least_one",
+                separator=True,
+            )
+            self.normalization_action = handler.new_action(
+                _("Edge normalization..."),
+                triggered=self.run_normalization,
+                tip=_("Find E0 and normalize absorption spectra to a unit edge step"),
+                select_condition="at_least_one",
             )

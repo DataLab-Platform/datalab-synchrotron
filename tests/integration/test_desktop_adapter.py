@@ -21,11 +21,15 @@ from datalab_synchrotron.mappings import packaged_mappings
 
 
 def test_plugin_descriptor() -> None:
-    """The entry point declares an I/O plugin."""
+    """The entry point declares an I/O and processing plugin with its recipes."""
     assert desktop.SynchrotronPlugin.get_plugin_id() == PLUGIN_ID
     assert desktop.SynchrotronPlugin.PLUGIN_INFO.capabilities == frozenset(
-        {PluginCapability.IO}
+        {PluginCapability.IO, PluginCapability.PROCESSING}
     )
+    assert [recipe.local_id for recipe in desktop.SynchrotronPlugin.get_recipes()] == [
+        "xas-absorption",
+        "xas-normalization",
+    ]
 
 
 def test_import_spec_scans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
