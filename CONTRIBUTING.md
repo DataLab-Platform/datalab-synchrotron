@@ -10,6 +10,10 @@ python -m ruff check .
 python -m pytest
 ```
 
+## Trying the Plugin in DataLab
+
+With DataLab 1.4 or later, add this project folder in **Plugins > Configure plugins... > Plugin settings**, then reload the plugins: DataLab loads the plugin from `src/datalab_synchrotron/adapters/desktop.py`, without installing the project (see [DataLab-Platform/DataLab#412](https://github.com/DataLab-Platform/DataLab/pull/412)).
+
 ## Architecture
 
 Dependencies point inward:
@@ -29,7 +33,7 @@ adapters -> workflow, formats, mappings -> core
 ## Tests
 
 - `tests/unit`: readers, conversion, formats and shipped mappings, on synthetic files (`tests/support`).
-- `tests/integration`: imports and recipes in DataLab. DataLab's discovery of installed plugins is disabled there, so that an editable install does not reload the modules patched by the tests.
+- `tests/integration`: imports and recipes in DataLab. DataLab's plugin discovery is disabled there: DataLab would otherwise load this plugin, whether installed or found on the Python path, reload the modules patched by the tests and unregister its formats when closing.
 - `tests/validation`: the SPEC reader compared with silx's reader (skipped if silx is not installed), and the XAS analysis on measured spectra (`tests/data/xas`, from Larch's examples, MIT license) compared with Larch's results and with tabulated edge energies. Larch's results are frozen in `tests/data/xas/larch_references.json`; regenerate them with `python tests/validation/make_larch_references.py` in an environment where Larch is installed (`pip install xraylarch`).
 
 ## Branches
