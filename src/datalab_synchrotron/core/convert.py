@@ -21,10 +21,15 @@ from .xdi import XdiFile
 __all__ = [
     "ScanGroup",
     "ScanImport",
+    "SkippedScan",
+    "check_scan_selection",
+    "import_scan",
     "mca_signals",
     "plan_scan_import",
     "scan_signals",
     "select_scans",
+    "summarize_skipped",
+    "xdi_signals",
 ]
 
 
@@ -112,11 +117,59 @@ class ScanGroup:
 
 
 @dataclasses.dataclass(frozen=True)
+class SkippedScan:
+    """Scan left out of an import, with the reason."""
+
+    key: str
+    reason: str
+
+
+@dataclasses.dataclass(frozen=True)
 class ScanImport:
     """Signals to import, one group per scan, and the scans that were skipped."""
 
     groups: tuple[ScanGroup, ...]
-    skipped: tuple[str, ...]
+    skipped: tuple[SkippedScan, ...]
+
+    @property
+    def signal_count(self) -> int:
+        """Return the number of signals to import."""
+        return sum(len(group.signals) for group in self.groups)
+
+
+def _scan_list(keys: Sequence[str], max_keys: int) -> str:
+    """Return a short list of scan keys: first ones, then the last one."""
+    if len(keys) == 1:
+        return f"scan {keys[0]}"
+    if len(keys) <= max_keys:
+        return f"{len(keys)} scans: {', '.join(keys)}"
+    shown = ", ".join(keys[: max_keys - 1])
+    return f"{len(keys)} scans: {shown}, ..., {keys[-1]}"
+
+
+def summarize_skipped(
+    skipped: Sequence[SkippedScan], max_reasons: int = 5, max_keys: int = 6
+) -> list[str]:
+    """Return one line per reason why scans were skipped, with a short list of them.
+
+    Args:
+        skipped: skipped scans
+        max_reasons: number of reasons shown, the others being counted together
+        max_keys: number of scan keys shown per reason
+    """
+    by_reason: dict[str, list[str]] = {}
+    for item in skipped:
+        by_reason.setdefault(item.reason, []).append(item.key)
+    reasons = sorted(by_reason.items(), key=lambda item: -len(item[1]))
+    lines = [
+        f"{reason[:1].upper()}{reason[1:]} ({_scan_list(keys, max_keys)})"
+        for reason, keys in reasons[:max_reasons]
+    ]
+    others = reasons[max_reasons:]
+    if others:
+        count = sum(len(keys) for _reason, keys in others)
+        lines.append(f"Other reasons ({count} scans)")
+    return lines
 
 
 def select_scans(spec: SpecFile, text: str) -> list[str]:
@@ -152,6 +205,42 @@ def select_scans(spec: SpecFile, text: str) -> list[str]:
     return [info.key for info in spec.scans if info.key in selected]
 
 
+def check_scan_selection(x: str, counters: Sequence[str], include_mca: bool) -> None:
+    """Raise if neither a counter other than X nor the MCA spectra are selected."""
+    if not [counter for counter in counters if counter != x] and not include_mca:
+        raise ValueError("Select at least one counter or the MCA spectra")
+
+
+def import_scan(
+    spec: SpecFile,
+    key: str,
+    x: str,
+    counters: Sequence[str],
+    include_mca: bool = False,
+) -> tuple[ScanGroup | None, SkippedScan | None]:
+    """Return the signals of one scan, and why its columns were left out, if so.
+
+    MCA spectra are imported even if columns are missing.
+    """
+    counters = [counter for counter in counters if counter != x]
+    scan = spec.read_scan(key)
+    signals: list[SignalObj] = []
+    skipped = None
+    missing = [name for name in (x, *counters) if name not in scan.info.labels]
+    if counters and missing:
+        skipped = SkippedScan(key, f"no column {', '.join(missing)}")
+    elif counters and scan.data.shape[0] == 0:
+        skipped = SkippedScan(key, "no data")
+    elif counters:
+        signals.extend(scan_signals(spec, scan, x, counters))
+    if include_mca:
+        signals.extend(mca_signals(spec, scan))
+    if not signals:
+        return None, skipped
+    title = f"Scan {key} - {scan.info.command}".strip(" -")
+    return ScanGroup(title, tuple(signals)), skipped
+
+
 def plan_scan_import(
     spec: SpecFile,
     keys: Sequence[str],
@@ -167,28 +256,19 @@ def plan_scan_import(
     Raises:
         ValueError: if nothing is selected for import
     """
-    counters = [counter for counter in counters if counter != x]
-    if not counters and not include_mca:
-        raise ValueError("Select at least one counter or the MCA spectra")
+    check_scan_selection(x, counters, include_mca)
     groups: list[ScanGroup] = []
-    skipped: list[str] = []
+    skipped: list[SkippedScan] = []
     for key in keys:
-        scan = spec.read_scan(key)
-        signals: list[SignalObj] = []
-        missing = [name for name in (x, *counters) if name not in scan.info.labels]
-        if counters and missing:
-            skipped.append(f"scan {key}: no column {', '.join(missing)}")
-        elif counters and scan.data.shape[0] == 0:
-            skipped.append(f"scan {key}: no data")
-        elif counters:
-            signals.extend(scan_signals(spec, scan, x, counters))
-        if include_mca:
-            signals.extend(mca_signals(spec, scan))
-        if signals:
-            title = f"Scan {key} - {scan.info.command}".strip(" -")
-            groups.append(ScanGroup(title, tuple(signals)))
+        group, reason = import_scan(spec, key, x, counters, include_mca)
+        if group is not None:
+            groups.append(group)
+        if reason is not None:
+            skipped.append(reason)
     if not groups:
-        raise ValueError("No signal to import: " + "; ".join(skipped))
+        raise ValueError(
+            "No signal to import:\n" + "\n".join(summarize_skipped(skipped))
+        )
     return ScanImport(tuple(groups), tuple(skipped))
 
 

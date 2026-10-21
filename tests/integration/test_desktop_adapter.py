@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 
 import h5py
@@ -32,18 +33,29 @@ def test_plugin_descriptor() -> None:
     ]
 
 
-def test_import_spec_scans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Selected scans are imported in one group each, with their origin."""
-    filename = write_spec(tmp_path / "beamtime.dat")
+def _patch_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+    scans: str,
+    x: str,
+    counters: list[str],
+    mca: bool = False,
+) -> None:
+    """Answer the SPEC import dialog with the given parameters."""
     original = desktop._import_parameters  # pylint: disable=protected-access
 
     def parameters(spec):
         param = original(spec)
-        param.scans, param.x, param.counters = "1", "Theta", ["Detector counts"]
+        param.scans, param.x, param.counters, param.mca = scans, x, counters, mca
         monkeypatch.setattr(param, "edit", lambda **_kwargs: True)
         return param
 
     monkeypatch.setattr(desktop, "_import_parameters", parameters)
+
+
+def test_import_spec_scans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Selected scans are imported in one group each, with their origin."""
+    filename = write_spec(tmp_path / "beamtime.dat")
+    _patch_parameters(monkeypatch, "1", "Theta", ["Detector counts"])
     warnings: list[str] = []
     with (
         execenv.context(unattended=True),
@@ -61,6 +73,66 @@ def test_import_spec_scans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         (signal,) = groups[-1].get_objects()
         assert get_experimental_source(signal)["entry"] == "1.2"
         assert not warnings
+
+
+def test_skipped_scans_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scans lacking the selected columns are reported in one line per reason."""
+    filename = write_spec(tmp_path / "beamtime.dat")
+    _patch_parameters(monkeypatch, "all", "Theta", ["Detector counts"])
+    warnings: list[str] = []
+    with (
+        execenv.context(unattended=True),
+        datalab_test_app_context(console=False, exec_loop=False) as main,
+    ):
+        plugin = desktop.SynchrotronPlugin()
+        plugin.main, plugin.proxy = main, LocalProxy(main)
+        monkeypatch.setattr(plugin, "show_warning", warnings.append)
+        assert plugin.import_spec_scans(filename) == 2
+    assert warnings == [
+        "Selected columns were not imported from 3 of 5 scans:\n"
+        "No column Theta, Detector counts (3 scans: 2.1, 3.1, 4.1)"
+    ]
+
+
+class _CancellingProgress:
+    """Progress dialog whose Cancel button is pressed at the n-th check."""
+
+    def __init__(self, checks: int) -> None:
+        self.checks = checks
+
+    def setValue(self, _value: int) -> None:  # pylint: disable=invalid-name
+        """Ignore progress."""
+
+    def setLabelText(self, _text: str) -> None:  # pylint: disable=invalid-name
+        """Ignore labels."""
+
+    def wasCanceled(self) -> bool:  # pylint: disable=invalid-name
+        """Return True from the n-th check on."""
+        self.checks -= 1
+        return self.checks <= 0
+
+
+def test_cancel_spec_import(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Signals are added in batches, and the import stops when cancelled."""
+    filename = write_spec(tmp_path / "beamtime.dat")
+    _patch_parameters(monkeypatch, "4", "Energy", [], mca=True)
+    monkeypatch.setattr(desktop, "ADD_BATCH_SIZE", 1)
+    progress = _CancellingProgress(checks=3)
+    monkeypatch.setattr(
+        desktop, "create_progress_bar", lambda *_args, **_kw: nullcontext(progress)
+    )
+    infos: list[str] = []
+    with (
+        execenv.context(unattended=True),
+        datalab_test_app_context(console=False, exec_loop=False) as main,
+    ):
+        plugin = desktop.SynchrotronPlugin()
+        plugin.main, plugin.proxy = main, LocalProxy(main)
+        monkeypatch.setattr(plugin, "show_info", infos.append)
+        # Checks: before reading scan 4.1, before its 1st and 2nd batch of 1 signal
+        assert plugin.import_spec_scans(filename) == 1
+        assert len(main.signalpanel.objmodel.get_groups()[-1].get_objects()) == 1
+    assert infos == ["Import cancelled: 1 signal(s) imported."]
 
 
 def test_not_a_spec_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

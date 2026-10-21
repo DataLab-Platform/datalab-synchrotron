@@ -3,10 +3,14 @@
 from .convert import (
     ScanGroup,
     ScanImport,
+    SkippedScan,
+    check_scan_selection,
+    import_scan,
     mca_signals,
     plan_scan_import,
     scan_signals,
     select_scans,
+    summarize_skipped,
     xdi_signals,
 )
 from .spec import SpecFile, SpecScan, SpecScanInfo, is_spec_file
@@ -26,13 +30,16 @@ __all__ = [
     "EdgeNormalization",
     "ScanGroup",
     "ScanImport",
+    "SkippedScan",
     "SpecFile",
     "SpecScan",
     "SpecScanInfo",
     "XdiColumn",
     "XdiFile",
     "absorption",
+    "check_scan_selection",
     "edge_energy",
+    "import_scan",
     "is_spec_file",
     "is_xdi_file",
     "mca_signals",
@@ -41,5 +48,6 @@ __all__ = [
     "read_xdi",
     "scan_signals",
     "select_scans",
+    "summarize_skipped",
     "xdi_signals",
 ]
