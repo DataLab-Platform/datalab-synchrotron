@@ -1,4 +1,4 @@
-# Synchrotron Beamline Data
+# <img src="src/datalab_synchrotron/icons/synchrotron.svg" alt="" width="48" align="absmiddle"> Synchrotron Beamline Data
 
 A [DataLab](https://datalab-platform.com/) plugin to read beamline data and analyze it in DataLab.
 
