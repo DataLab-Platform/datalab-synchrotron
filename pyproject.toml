@@ -26,6 +26,9 @@ test = ["build >= 1.2", "pytest", "ruff", "silx"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+datalab_synchrotron = ["data/mappings/*.json"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]
 

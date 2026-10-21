@@ -10,3 +10,4 @@ First version of the Synchrotron Beamline Data plugin.
 - **File > Open** of `.spec` files in the signal panel: one signal per scan, last column versus the first one.
 - **Plugins > Synchrotron Beamline Data > Import SPEC scans...**: selection of scans (`all`, numbers, `<number>.<occurrence>` keys, ranges), X column, counters and MCA spectra, imported in one group per scan; scans lacking a selected column are skipped and listed.
 - Origin of each signal in its `experimental_source` metadata (file, scan, columns, command, date, motor positions).
+- HDF5 data mapping "Scan counters", applied by DataLab's HDF5 browser while the plugin is loaded: each counter `data_<n>` of an `NXdata` group with `time_1` time stamps is imported versus time.

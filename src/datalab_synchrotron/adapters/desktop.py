@@ -12,6 +12,7 @@ from qtpy.compat import getopenfilename
 from .. import PLUGIN_DESCRIPTION, PLUGIN_ID, PLUGIN_NAME, __version__
 from ..core import SpecFile, is_spec_file, plan_scan_import, select_scans
 from ..formats import unregister_formats
+from ..mappings import register_mappings, unregister_mappings
 
 
 def _import_parameters(spec: SpecFile) -> gds.DataSet:
@@ -52,9 +53,14 @@ class SynchrotronPlugin(PluginBase):
         documentation_url="https://github.com/DataLab-Platform/datalab-synchrotron",
     )
 
+    def register_hooks(self) -> None:
+        """Apply the shipped HDF5 data mappings."""
+        register_mappings()
+
     def unregister_hooks(self) -> None:
-        """Remove the file formats registered when the plugin was loaded."""
+        """Remove the file formats and data mappings added by the plugin."""
         unregister_formats()
+        unregister_mappings()
 
     def import_spec_scans(self, filename: str | None = None) -> int:
         """Import scans of a SPEC file, one group per scan.

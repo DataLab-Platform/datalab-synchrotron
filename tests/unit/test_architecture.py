@@ -19,8 +19,10 @@ FORBIDDEN_IN_CORE = (
     "silx",
     "fabio",
     "tango",
+    "sigimax",
     f"{PACKAGE_NAME}.adapters",
     f"{PACKAGE_NAME}.formats",
+    f"{PACKAGE_NAME}.mappings",
 )
 
 

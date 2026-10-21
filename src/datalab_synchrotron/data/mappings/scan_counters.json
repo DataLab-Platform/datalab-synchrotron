@@ -1,0 +1,12 @@
+{
+    "version": 1,
+    "name": "Scan counters",
+    "description": "Counters data_1, data_2... of a scan data group, versus the time stamps time_1 of their points.",
+    "match": {
+        "attributes": {"NX_class": "NXdata"},
+        "paths": ["time_1", "data_1"]
+    },
+    "objects": [
+        {"name": "{name}", "signal": "data_*", "axes": ["time_1"]}
+    ]
+}

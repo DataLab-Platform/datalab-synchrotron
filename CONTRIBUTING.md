@@ -15,18 +15,20 @@ python -m pytest
 Dependencies point inward:
 
 ```text
-adapters -> formats -> core
+adapters -> formats, mappings -> core
 ```
 
 - `core` holds the readers (`spec`), their conversion to Sigima signals with their `experimental_source`, and the import plans of scans (`convert`). It imports neither DataLab, Qt, nor compiled reader libraries such as silx or FabIO, so that it also runs in DataLab-Web and installs from DataLab's plugin catalog.
 - `formats.py` registers the Sigima file formats used by **File > Open**, and removes them when the plugin is unloaded.
+- `mappings.py` registers the HDF5 data mappings of `data/mappings` (JSON, see `sigimax.h5.mapping`) when the plugin is loaded, and removes them when it is unloaded. A new mapping is a new JSON file there.
 - `adapters/desktop.py` declares the plugin and its **Import SPEC scans...** action.
 
 `tests/unit/test_architecture.py` checks the layer boundaries.
 
 ## Tests
 
-- `tests/unit`: readers, conversion and formats, on synthetic files (`tests/support`).
+- `tests/unit`: readers, conversion, formats and shipped mappings, on synthetic files (`tests/support`).
+- `tests/integration`: imports in DataLab. DataLab's discovery of installed plugins is disabled there, so that an editable install does not reload the modules patched by the tests.
 - `tests/validation`: the SPEC reader compared with silx's reader (skipped if silx is not installed).
 
 ## Branches
