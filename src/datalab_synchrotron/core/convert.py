@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import re
 from collections.abc import Sequence
 
 import numpy as np
@@ -14,7 +16,14 @@ from sigima.objects import (
 
 from .spec import SpecFile, SpecScan
 
-__all__ = ["mca_signals", "scan_signals"]
+__all__ = [
+    "ScanGroup",
+    "ScanImport",
+    "mca_signals",
+    "plan_scan_import",
+    "scan_signals",
+    "select_scans",
+]
 
 
 def _source(spec: SpecFile, scan: SpecScan, selection: dict, conversions) -> dict:
@@ -90,3 +99,92 @@ def mca_signals(
         )
         signals.append(signal)
     return signals
+
+
+@dataclasses.dataclass(frozen=True)
+class ScanGroup:
+    """Signals read from one scan, imported in a group of their own."""
+
+    title: str
+    signals: tuple[SignalObj, ...]
+
+
+@dataclasses.dataclass(frozen=True)
+class ScanImport:
+    """Signals to import, one group per scan, and the scans that were skipped."""
+
+    groups: tuple[ScanGroup, ...]
+    skipped: tuple[str, ...]
+
+
+def select_scans(spec: SpecFile, text: str) -> list[str]:
+    """Return the keys of the scans selected by a text.
+
+    Args:
+        spec: SPEC file
+        text: ``all``, or comma-separated scan numbers (all their occurrences),
+         ``<number>.<occurrence>`` keys and ``<first>-<last>`` number ranges,
+         e.g. ``1, 3.2, 10-12``
+
+    Raises:
+        ValueError: if the text is invalid or selects no scan
+    """
+    if text.strip().lower() in ("", "all"):
+        return [info.key for info in spec.scans]
+    selected: set[str] = set()
+    for token in (part.strip() for part in text.split(",")):
+        match = re.fullmatch(r"(\d+)(?:\.(\d+)|-(\d+))?", token)
+        if match is None:
+            raise ValueError(f"Invalid scan selection '{token}' (e.g. 1, 3.2, 10-12)")
+        first = int(match.group(1))
+        last = int(match.group(3)) if match.group(3) else first
+        keys = [
+            info.key
+            for info in spec.scans
+            if first <= info.number <= last
+            and (match.group(2) is None or info.occurrence == int(match.group(2)))
+        ]
+        if not keys:
+            raise ValueError(f"No scan matches '{token}'")
+        selected.update(keys)
+    return [info.key for info in spec.scans if info.key in selected]
+
+
+def plan_scan_import(
+    spec: SpecFile,
+    keys: Sequence[str],
+    x: str,
+    counters: Sequence[str],
+    include_mca: bool = False,
+) -> ScanImport:
+    """Return the signals to import from scans, one group per scan.
+
+    Scans of the same structure are never merged: each scan is its own group.
+    Scans lacking a selected column are skipped, with the reason.
+
+    Raises:
+        ValueError: if nothing is selected for import
+    """
+    counters = [counter for counter in counters if counter != x]
+    if not counters and not include_mca:
+        raise ValueError("Select at least one counter or the MCA spectra")
+    groups: list[ScanGroup] = []
+    skipped: list[str] = []
+    for key in keys:
+        scan = spec.read_scan(key)
+        signals: list[SignalObj] = []
+        missing = [name for name in (x, *counters) if name not in scan.info.labels]
+        if counters and missing:
+            skipped.append(f"scan {key}: no column {', '.join(missing)}")
+        elif counters and scan.data.shape[0] == 0:
+            skipped.append(f"scan {key}: no data")
+        elif counters:
+            signals.extend(scan_signals(spec, scan, x, counters))
+        if include_mca:
+            signals.extend(mca_signals(spec, scan))
+        if signals:
+            title = f"Scan {key} - {scan.info.command}".strip(" -")
+            groups.append(ScanGroup(title, tuple(signals)))
+    if not groups:
+        raise ValueError("No signal to import: " + "; ".join(skipped))
+    return ScanImport(tuple(groups), tuple(skipped))

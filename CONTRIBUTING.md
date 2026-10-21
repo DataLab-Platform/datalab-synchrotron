@@ -18,9 +18,9 @@ Dependencies point inward:
 adapters -> formats -> core
 ```
 
-- `core` holds the readers (`spec`) and their conversion to Sigima signals with their `experimental_source` (`convert`). It imports neither DataLab, Qt, nor compiled reader libraries such as silx or FabIO, so that it also runs in DataLab-Web and installs from DataLab's plugin catalog.
+- `core` holds the readers (`spec`), their conversion to Sigima signals with their `experimental_source`, and the import plans of scans (`convert`). It imports neither DataLab, Qt, nor compiled reader libraries such as silx or FabIO, so that it also runs in DataLab-Web and installs from DataLab's plugin catalog.
 - `formats.py` registers the Sigima file formats used by **File > Open**, and removes them when the plugin is unloaded.
-- `adapters/desktop.py` declares the plugin.
+- `adapters/desktop.py` declares the plugin and its **Import SPEC scans...** action.
 
 `tests/unit/test_architecture.py` checks the layer boundaries.
 
