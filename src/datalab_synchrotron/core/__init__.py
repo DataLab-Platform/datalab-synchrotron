@@ -1,4 +1,4 @@
-"""Host-independent readers of experimental data formats."""
+"""Host-independent readers of experimental data formats, and XAS analysis."""
 
 from .convert import (
     ScanGroup,
@@ -7,6 +7,7 @@ from .convert import (
     plan_scan_import,
     scan_signals,
     select_scans,
+    xdi_signals,
 )
 from .spec import SpecFile, SpecScan, SpecScanInfo, is_spec_file
 from .xas import (
@@ -17,6 +18,7 @@ from .xas import (
     edge_energy,
     normalize_edge,
 )
+from .xdi import XdiColumn, XdiFile, is_xdi_file, read_xdi
 
 __all__ = [
     "Absorption",
@@ -27,12 +29,17 @@ __all__ = [
     "SpecFile",
     "SpecScan",
     "SpecScanInfo",
+    "XdiColumn",
+    "XdiFile",
     "absorption",
     "edge_energy",
     "is_spec_file",
+    "is_xdi_file",
     "mca_signals",
     "normalize_edge",
     "plan_scan_import",
+    "read_xdi",
     "scan_signals",
     "select_scans",
+    "xdi_signals",
 ]

@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "datalab-synchrotron"
 version = "0.1.0"
-description = "Read beamline data (SPEC scans and MCA spectra) and analyze it in DataLab"
+description = "Read beamline data (SPEC scans, MCA spectra, XDI files) and analyze X-ray absorption spectra in DataLab"
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
 dependencies = ["datalab-platform >= 1.4, < 2"]
-keywords = ["datalab", "datalab-plugin", "synchrotron", "spec", "beamline"]
+keywords = ["datalab", "datalab-plugin", "synchrotron", "spec", "beamline", "xas", "xdi"]
 
 [project.urls]
 Homepage = "https://github.com/DataLab-Platform/datalab-synchrotron"
@@ -27,7 +27,7 @@ test = ["build >= 1.2", "pytest", "ruff", "silx"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-datalab_synchrotron = ["data/mappings/*.json"]
+datalab_synchrotron = ["data/mappings/*.json", "data/examples/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]

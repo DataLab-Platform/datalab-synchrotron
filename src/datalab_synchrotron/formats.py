@@ -3,6 +3,7 @@
 **File > Open** reads a ``.spec`` file as one signal per scan: the last column
 (usually the detector counts) versus the first one (usually the scanned motor).
 Other columns and MCA spectra are imported with the plugin's import action.
+It reads an ``.xdi`` file as one signal per column versus the energy.
 """
 
 from __future__ import annotations
@@ -11,9 +12,9 @@ from sigima.io.base import FormatInfo
 from sigima.io.signal.base import SignalFormatBase, SignalIORegistry
 from sigima.objects import SignalObj
 
-from .core import SpecFile, scan_signals
+from .core import SpecFile, read_xdi, scan_signals, xdi_signals
 
-__all__ = ["SpecSignalFormat", "unregister_formats"]
+__all__ = ["SpecSignalFormat", "XdiSignalFormat", "unregister_formats"]
 
 
 class SpecSignalFormat(SignalFormatBase):
@@ -38,6 +39,21 @@ class SpecSignalFormat(SignalFormatBase):
         if not signals:
             raise ValueError(f"'{filename}' holds no scan with data columns")
         return signals
+
+
+class XdiSignalFormat(SignalFormatBase):
+    """XDI (XAS Data Interchange) files"""
+
+    FORMAT_INFO = FormatInfo(
+        name="XDI files",
+        extensions="*.xdi",
+        readable=True,
+        writeable=False,
+    )
+
+    def read(self, filename: str, worker=None) -> list[SignalObj]:
+        """Read every column versus the first one (energy)."""
+        return xdi_signals(read_xdi(filename))
 
 
 def unregister_formats() -> None:

@@ -1,10 +1,11 @@
-"""Conversion of SPEC scans to signals recording their origin."""
+"""Conversion of SPEC scans and XDI files to signals recording their origin."""
 
 from __future__ import annotations
 
 import dataclasses
 import re
 from collections.abc import Sequence
+from pathlib import PurePath
 
 import numpy as np
 from sigima.objects import (
@@ -15,6 +16,7 @@ from sigima.objects import (
 )
 
 from .spec import SpecFile, SpecScan
+from .xdi import XdiFile
 
 __all__ = [
     "ScanGroup",
@@ -188,3 +190,54 @@ def plan_scan_import(
     if not groups:
         raise ValueError("No signal to import: " + "; ".join(skipped))
     return ScanImport(tuple(groups), tuple(skipped))
+
+
+#: XDI header fields recorded in the origin of the signals
+_XDI_DETAILS = {
+    "element": "Element.symbol",
+    "edge": "Element.edge",
+    "facility": "Facility.name",
+    "beamline": "Beamline.name",
+    "monochromator": "Mono.name",
+    "sample": "Sample.name",
+    "start_time": "Scan.start_time",
+}
+
+
+def xdi_signals(xdi: XdiFile, columns: Sequence[str] | None = None) -> list[SignalObj]:
+    """Return one signal per column of an XDI file, versus the first column.
+
+    Args:
+        xdi: XDI file
+        columns: column names (default: all columns but the first one)
+
+    Raises:
+        KeyError: if a column does not exist
+    """
+    xcol = xdi.columns[0]
+    if columns is None:
+        columns = [column.name for column in xdi.columns[1:]]
+    details = {key: xdi.field(name) for key, name in _XDI_DETAILS.items()}
+    details["element"], details["edge"] = xdi.element, xdi.edge
+    details = {key: value for key, value in details.items() if value}
+    if xdi.skipped_lines:
+        details["skipped_lines"] = len(xdi.skipped_lines)
+    signals = []
+    for name in columns:
+        column = xdi.columns[xdi.column_index(name)]
+        signal = create_signal(
+            f"{column.name} ({PurePath(xdi.path).name})",
+            xdi.data[:, 0].copy(),
+            xdi.column(name).copy(),
+            units=(xcol.units, column.units),
+            labels=(xcol.name, column.name),
+        )
+        source = make_experimental_source(
+            "xdi",
+            xdi.path,
+            selection={"x": xcol.name, "y": column.name},
+            details=details or None,
+        )
+        set_experimental_source(signal, source)
+        signals.append(signal)
+    return signals

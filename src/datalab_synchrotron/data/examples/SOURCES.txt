@@ -1,0 +1,7 @@
+Measured X-ray absorption spectra opened by the plugin's examples.
+
+cu_metal_rt.xdi: copper foil at room temperature, K edge, transmission,
+measured at APS 13-ID. From Larch (xraylarch) examples/xafsdata,
+https://github.com/xraypy/xraylarch, commit
+8fe9fdada80f11dfa795fc78881d85d95b8bb84c, MIT license (LICENSE-xraylarch.txt).
+The file is unchanged.

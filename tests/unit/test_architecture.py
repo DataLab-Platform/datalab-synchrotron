@@ -69,7 +69,7 @@ def test_core_is_portable() -> None:
 
 def test_workflow_is_headless() -> None:
     """Recipes use DataLab's headless contracts only, not its user interface."""
-    allowed = ("datalab.plugins.recipes",)
+    allowed = ("datalab.plugins.recipes", "datalab.plugins.examples")
     forbidden = (*FORBIDDEN_IN_CORE, f"{PACKAGE_NAME}.mappings")
     violations = [
         f"{filename.relative_to(PACKAGE_ROOT)} imports {name}"

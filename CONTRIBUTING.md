@@ -18,8 +18,8 @@ Dependencies point inward:
 adapters -> workflow, formats, mappings -> core
 ```
 
-- `core` holds the readers (`spec`), their conversion to Sigima signals with their `experimental_source`, the import plans of scans (`convert`), and the X-ray absorption analysis (`xas`). It imports neither DataLab, Qt, nor compiled reader libraries such as silx or FabIO, so that it also runs in DataLab-Web and installs from DataLab's plugin catalog.
-- `workflow` holds the recipes run by DataLab (`xas`): headless, they use DataLab's recipe contracts (`datalab.plugins.recipes`) and the core only.
+- `core` holds the readers (`spec`, `xdi`), their conversion to Sigima signals with their `experimental_source`, the import plans of scans (`convert`), and the X-ray absorption analysis (`xas`). It imports neither DataLab, Qt, nor compiled reader libraries such as silx or FabIO, so that it also runs in DataLab-Web and installs from DataLab's plugin catalog.
+- `workflow` holds the recipes run by DataLab (`xas`) and the examples (`examples`, data in `data/examples` with its source and license): headless, they use DataLab's recipe and example contracts and the core only.
 - `formats.py` registers the Sigima file formats used by **File > Open**, and removes them when the plugin is unloaded.
 - `mappings.py` registers the HDF5 data mappings of `data/mappings` (JSON, see `sigimax.h5.mapping`) when the plugin is loaded, and removes them when it is unloaded. A new mapping is a new JSON file there.
 - `adapters/desktop.py` declares the plugin and its **Import SPEC scans...** action.

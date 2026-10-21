@@ -7,6 +7,7 @@ import os.path as osp
 import guidata.dataset as gds
 from datalab.config import _
 from datalab.plugins import PluginBase, PluginCapability, PluginInfo
+from datalab.plugins.examples import PluginExample, PluginExampleData
 from datalab.plugins.recipes import RecipeOutcome
 from qtpy.compat import getopenfilename
 
@@ -14,7 +15,13 @@ from .. import PLUGIN_DESCRIPTION, PLUGIN_ID, PLUGIN_NAME, __version__
 from ..core import SpecFile, is_spec_file, plan_scan_import, select_scans
 from ..formats import unregister_formats
 from ..mappings import register_mappings, unregister_mappings
-from ..workflow import ABSORPTION_RECIPE, NORMALIZATION_RECIPE
+from ..workflow import (
+    ABSORPTION_RECIPE,
+    CU_FOIL_EXAMPLE,
+    NORMALIZATION_RECIPE,
+    materialize_example,
+)
+from ..workflow import EXAMPLES as WORKFLOW_EXAMPLES
 from ..workflow import RECIPES as WORKFLOW_RECIPES
 
 
@@ -56,6 +63,17 @@ class SynchrotronPlugin(PluginBase):
         documentation_url="https://github.com/DataLab-Platform/datalab-synchrotron",
     )
     RECIPES = WORKFLOW_RECIPES
+    EXAMPLES = WORKFLOW_EXAMPLES
+
+    @classmethod
+    def materialize_example(cls, example_id: str) -> PluginExampleData | None:
+        """Read an example from the plugin's data files."""
+        cls.get_example(example_id)
+        return materialize_example(example_id)
+
+    def open_cu_foil_example(self) -> PluginExample | None:
+        """Open the copper foil example and select its counters."""
+        return self.launch_example(CU_FOIL_EXAMPLE.id)
 
     def register_hooks(self) -> None:
         """Apply the shipped HDF5 data mappings."""
@@ -132,6 +150,12 @@ class SynchrotronPlugin(PluginBase):
                 tip=_(
                     "Import columns and MCA spectra of SPEC scans, one group per scan"
                 ),
+                select_condition="always",
+            )
+            self.cu_foil_example_action = handler.new_action(
+                _("Open copper foil example"),
+                triggered=self.open_cu_foil_example,
+                tip=_("Open the counters of a copper foil measured in transmission"),
                 select_condition="always",
             )
             self.absorption_action = handler.new_action(

@@ -22,8 +22,10 @@ from sigima.objects import (
 )
 from support.xas_corpus import REFERENCES, spectrum
 
+from datalab_synchrotron.adapters.desktop import SynchrotronPlugin
 from datalab_synchrotron.workflow import (
     ABSORPTION_RECIPE,
+    CU_FOIL_EXAMPLE,
     NORMALIZATION_RECIPE,
     AbsorptionParameters,
     EdgeNormalizationParameters,
@@ -176,6 +178,29 @@ def test_edge_normalization_warns_on_energy_unit() -> None:
     assert diagnostic.level is RecipeDiagnosticLevel.WARNING
 
 
+def test_copper_foil_example() -> None:
+    """The example gives the expected E0 and edge step through both recipes."""
+    data = SynchrotronPlugin.materialize_example(CU_FOIL_EXAMPLE.id)
+    assert [obj.title for obj in data.objects] == [
+        "i0 (cu_metal_rt.xdi)",
+        "itrans (cu_metal_rt.xdi)",
+    ]
+    bindings = ABSORPTION_RECIPE.suggest_bindings(tuple(reversed(data.objects)))
+    parameters = AbsorptionParameters.create(
+        **data.values_for(ABSORPTION_RECIPE.recipe_id)
+    )
+    absorption = ABSORPTION_RECIPE.run(bindings, parameters, RecipeExecutionContext())
+    normalized = NORMALIZATION_RECIPE.run(
+        {"spectra": (absorption.objects[0].value,)},
+        EdgeNormalizationParameters(),
+        RecipeExecutionContext(),
+    )
+    values = {row[0]: row[1] for row in normalized.results[0].value.data}
+    assert values["E0"] == 8980.5
+    assert round(values["Edge step"], 2) == 2.73
+    assert values["E0"] - 8979.0 == pytest.approx(1.5)
+
+
 def test_recipes_in_datalab() -> None:
     """From counters to normalized spectrum in DataLab, with results attached."""
     monitor, detector, _expected = _esrf_counters()
@@ -199,3 +224,16 @@ def test_recipes_in_datalab() -> None:
         assert normalized.objects[0].value.title in titles
         values = {row[0]: row[1] for row in normalized.results[0].value.data}
         assert values["E0"] == pytest.approx(LARCH["esrf_sample"]["e0"])
+
+
+def test_open_example_in_datalab() -> None:
+    """The example opens in the signal panel."""
+    with (
+        execenv.context(unattended=True),
+        datalab_test_app_context(console=False, exec_loop=False) as window,
+    ):
+        plugin = SynchrotronPlugin()
+        plugin.main = window
+        plugin.open_example(CU_FOIL_EXAMPLE.id)
+        titles = [obj.title for obj in window.signalpanel.objmodel.get_all_objects()]
+        assert titles == ["i0 (cu_metal_rt.xdi)", "itrans (cu_metal_rt.xdi)"]
