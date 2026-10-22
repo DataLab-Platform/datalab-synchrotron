@@ -15,19 +15,24 @@ from .convert import (
 )
 from .spec import SpecFile, SpecScan, SpecScanInfo, is_spec_file
 from .xas import (
+    MAX_EDGE_KEV,
     Absorption,
     AbsorptionMode,
     EdgeNormalization,
+    EnergyUnit,
     absorption,
     edge_energy,
+    energy_unit,
     normalize_edge,
 )
 from .xdi import XdiColumn, XdiFile, is_xdi_file, read_xdi
 
 __all__ = [
+    "MAX_EDGE_KEV",
     "Absorption",
     "AbsorptionMode",
     "EdgeNormalization",
+    "EnergyUnit",
     "ScanGroup",
     "ScanImport",
     "SkippedScan",
@@ -39,6 +44,7 @@ __all__ = [
     "absorption",
     "check_scan_selection",
     "edge_energy",
+    "energy_unit",
     "import_scan",
     "is_spec_file",
     "is_xdi_file",

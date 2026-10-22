@@ -7,8 +7,13 @@ Install the project in editable mode, in a Python environment where DataLab 1.4 
 ```bash
 python -m pip install -e ".[test]"
 python -m ruff check .
+python -m ruff format --check .
 python -m pytest
 ```
+
+## Continuous Integration
+
+GitHub Actions (`.github/workflows/ci.yml`) runs the same checks on Linux and Windows for each push to `develop` or `main` and each pull request, including the validation tests against silx and the frozen Larch results (Larch itself is not needed). DataLab 1.4 is not released yet: the workflow installs DataLab, Sigima and SigimaX from the `develop` branch of their repositories, or from another branch when run manually (**Run workflow**, `stack-ref` input).
 
 ## Trying the Plugin in DataLab
 

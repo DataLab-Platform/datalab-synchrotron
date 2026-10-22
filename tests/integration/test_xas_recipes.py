@@ -170,12 +170,70 @@ def test_edge_normalization_parameters() -> None:
     assert values["Post-edge polynomial degree"] == 1
 
 
-def test_edge_normalization_warns_on_energy_unit() -> None:
-    """Energies in another unit than eV are reported."""
+def _normalize(*spectra: SignalObj):
+    """Return the outcome of the edge normalization of spectra, with defaults."""
+    return NORMALIZATION_RECIPE.run(
+        {"spectra": spectra}, EdgeNormalizationParameters(), RecipeExecutionContext()
+    )
+
+
+def _table_values(outcome, index: int = 0) -> dict[str, float]:
+    """Return the results table of a normalization outcome as a dictionary."""
+    return {row[0]: row[1] for row in outcome.results[index].value.data}
+
+
+def test_edge_normalization_converts_kev() -> None:
+    """A spectrum in keV gives the results of the same spectrum in eV, in eV."""
+    reference = _normalize(_spectrum("cu_foil"))
     signal = _spectrum("cu_foil")
+    signal.x = signal.x / 1000.0
     signal.xunit = "keV"
     (diagnostic,) = NORMALIZATION_RECIPE.check_inputs({"spectra": (signal,)}, None)
-    assert diagnostic.level is RecipeDiagnosticLevel.WARNING
+    assert diagnostic.level is RecipeDiagnosticLevel.INFO
+    outcome = _normalize(signal)
+    expected, values = _table_values(reference), _table_values(outcome)
+    assert values.keys() == expected.keys()
+    for name, value in expected.items():
+        assert values[name] == pytest.approx(value, rel=1e-9, abs=1e-6), name
+    for output, expected_output in zip(outcome.objects, reference.objects):
+        assert output.value.xunit == "eV"
+        np.testing.assert_allclose(output.value.x, expected_output.value.x, rtol=1e-12)
+        np.testing.assert_allclose(output.value.y, expected_output.value.y, atol=1e-9)
+    assert "energy-unit-1" in {d.code for d in outcome.diagnostics}
+
+
+def test_edge_normalization_without_unit() -> None:
+    """Energies without unit are taken as eV, or refused if they look like keV."""
+    signal = _spectrum("cu_foil")
+    signal.xunit = ""
+    (diagnostic,) = NORMALIZATION_RECIPE.check_inputs({"spectra": (signal,)}, None)
+    assert diagnostic.level is RecipeDiagnosticLevel.INFO
+    assert _table_values(_normalize(signal)) == _table_values(
+        _normalize(_spectrum("cu_foil"))
+    )
+    signal.x = signal.x / 1000.0
+    (diagnostic,) = NORMALIZATION_RECIPE.check_inputs({"spectra": (signal,)}, None)
+    assert diagnostic.level is RecipeDiagnosticLevel.ERROR
+    with pytest.raises(RecipeValidationError, match="look like keV"):
+        _normalize(signal)
+
+
+@pytest.mark.parametrize(
+    ("unit", "match"), [("keV", "most likely in eV"), ("deg", "must be eV or keV")]
+)
+def test_edge_normalization_refuses_energy_unit(unit: str, match: str) -> None:
+    """Energies in an unknown unit, or contradicting their unit, are refused
+    before running: here, energies in eV labelled keV, or labelled in degrees."""
+    signal = _spectrum("cu_foil")
+    signal.xunit = unit
+    other = _spectrum("esrf_sample")
+    diagnostics = NORMALIZATION_RECIPE.check_inputs({"spectra": (other, signal)}, None)
+    (diagnostic,) = diagnostics
+    assert diagnostic.level is RecipeDiagnosticLevel.ERROR
+    assert diagnostic.code == "energy-unit-2"
+    assert diagnostic.message.startswith("cu_foil: ")
+    with pytest.raises(RecipeValidationError, match=match):
+        _normalize(other, signal)
 
 
 def test_copper_foil_example() -> None:

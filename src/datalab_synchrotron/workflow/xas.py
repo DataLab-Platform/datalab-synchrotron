@@ -23,7 +23,7 @@ from datalab.plugins.recipes import (
 from sigima.objects import NO_ROI, SignalObj, TableResult, create_signal
 
 from .. import PLUGIN_ID, __version__
-from ..core import AbsorptionMode, absorption, normalize_edge
+from ..core import AbsorptionMode, EnergyUnit, absorption, energy_unit, normalize_edge
 
 #: Number of invalid point energies listed in diagnostics
 MAX_LISTED_POINTS = 20
@@ -174,22 +174,39 @@ def run_absorption(
     )
 
 
+def _energy_units(
+    spectra: tuple[SignalObj, ...],
+) -> tuple[list[EnergyUnit | None], list[RecipeDiagnostic]]:
+    """Return how to convert the energies of each spectrum to eV, with diagnostics
+    (an error for each spectrum whose energies cannot be used)."""
+    units: list[EnergyUnit | None] = []
+    diagnostics = []
+    for index, signal in enumerate(spectra, start=1):
+        try:
+            unit = energy_unit(signal.xunit, signal.x)
+        except ValueError as error:
+            units.append(None)
+            level, message = RecipeDiagnosticLevel.ERROR, str(error)
+        else:
+            units.append(unit)
+            if not unit.note:
+                continue
+            level = (
+                RecipeDiagnosticLevel.WARNING
+                if unit.doubtful
+                else RecipeDiagnosticLevel.INFO
+            )
+            message = unit.note
+        message = f"{signal.title}: {message}"
+        diagnostics.append(RecipeDiagnostic(level, f"energy-unit-{index}", message))
+    return units, diagnostics
+
+
 def check_normalization_inputs(
     inputs: RecipeInputs, _parameters: gds.DataSet | None
 ) -> list[RecipeDiagnostic]:
-    """Energies are expected in eV."""
-    units = {signal.xunit for signal in inputs["spectra"] if signal.xunit}
-    other = sorted(unit for unit in units if unit != "eV")
-    if not other:
-        return []
-    return [
-        RecipeDiagnostic(
-            RecipeDiagnosticLevel.WARNING,
-            "energy-unit",
-            f"Energies are read in eV, but some spectra are in {', '.join(other)}: "
-            "default ranges assume eV",
-        )
-    ]
+    """Energies must be in eV or keV (converted to eV)."""
+    return _energy_units(inputs["spectra"])[1]
 
 
 def _table(signal: SignalObj, result) -> TableResult:
@@ -225,13 +242,17 @@ def run_normalization(
     automatic = bool(parameters.automatic_ranges)
     degree = int(parameters.post_degree)
     spectra = inputs["spectra"]
-    objects, results, diagnostics = [], [], []
-    for index, signal in enumerate(spectra, start=1):
+    units, diagnostics = _energy_units(spectra)
+    errors = [d.message for d in diagnostics if d.level is RecipeDiagnosticLevel.ERROR]
+    if errors:
+        raise RecipeValidationError("\n".join(errors))
+    objects, results = [], []
+    for index, (signal, unit) in enumerate(zip(spectra, units), start=1):
         context.raise_if_cancelled()
         context.report_progress((index - 1) / len(spectra), signal.title)
         try:
             result = normalize_edge(
-                signal.x,
+                signal.x * unit.factor,
                 signal.y,
                 e0=None if parameters.automatic_e0 else float(parameters.e0),
                 pre_range=None if automatic else (parameters.pre1, parameters.pre2),
@@ -251,13 +272,12 @@ def run_normalization(
                 )
             )
         labels = (signal.xlabel or "Energy", "Normalized mu")
-        units = (signal.xunit or "eV", "")
         for name, values in (("norm", result.norm), ("flat", result.flat)):
             output = create_signal(
                 f"{name}({signal.title})",
                 result.energy,
                 values,
-                units=units,
+                units=("eV", ""),
                 labels=labels,
             )
             objects.append(RecipeObjectOutput(f"{name}-{index}", output))
@@ -316,7 +336,8 @@ NORMALIZATION_RECIPE = RecipeDescriptor(
             RecipeObjectType.SIGNAL,
             RecipeCardinality.MANY,
             title="Absorption spectra",
-            description="mu(E) versus energy in eV, each normalized separately.",
+            description="mu(E) versus energy in eV or keV (converted to eV), each "
+            "normalized separately.",
         ),
     ),
     parameter_class=EdgeNormalizationParameters,

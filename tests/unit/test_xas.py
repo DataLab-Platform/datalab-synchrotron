@@ -6,9 +6,11 @@ import numpy as np
 import pytest
 
 from datalab_synchrotron.core.xas import (
+    MAX_EDGE_KEV,
     AbsorptionMode,
     absorption,
     edge_energy,
+    energy_unit,
     normalize_edge,
 )
 
@@ -109,3 +111,55 @@ def test_normalize_edge_needs_points() -> None:
     """Too short spectra are refused."""
     with pytest.raises(ValueError, match="at least 10"):
         normalize_edge(np.arange(5.0), np.arange(5.0))
+
+
+def test_energy_unit_converts_kev() -> None:
+    """Energies in eV are used as they are, energies in keV are converted."""
+    energy = _spectrum()[0]
+    unit = energy_unit("eV", energy)
+    assert (unit.factor, unit.note, unit.doubtful) == (1.0, "", False)
+    for name in ("keV", " KEV "):
+        unit = energy_unit(name, energy / 1000.0)
+        assert unit.factor == 1000.0 and not unit.doubtful
+        assert "converted" in unit.note
+
+
+def test_energy_unit_without_unit() -> None:
+    """Energies without unit are taken as eV, unless they look like keV."""
+    energy = _spectrum()[0]
+    unit = energy_unit("", energy)
+    assert unit.factor == 1.0 and "taken as eV" in unit.note
+    assert energy_unit(None, energy).factor == 1.0
+    with pytest.raises(ValueError, match="look like keV"):
+        energy_unit("", energy / 1000.0)
+
+
+def test_energy_unit_refuses_contradictions() -> None:
+    """Unknown units, and keV values beyond absorption edges, are refused."""
+    energy = _spectrum()[0]
+    with pytest.raises(ValueError, match="must be eV or keV"):
+        energy_unit("deg", energy)
+    with pytest.raises(ValueError, match="most likely in eV"):
+        energy_unit("keV", energy)
+    with pytest.raises(ValueError, match="No finite energy"):
+        energy_unit("eV", [np.nan, np.inf])
+
+
+def test_energy_unit_low_ev_is_doubtful() -> None:
+    """Energies in eV below the keV range bound are kept, with a doubt raised."""
+    unit = energy_unit("eV", np.linspace(50.0, MAX_EDGE_KEV - 1.0, 20))
+    assert unit.factor == 1.0 and unit.doubtful and "keV" in unit.note
+
+
+def test_normalize_edge_same_in_kev() -> None:
+    """Energies converted from keV give the normalization of energies in eV."""
+    energy, mu = _spectrum(noise=0.01)
+    reference = normalize_edge(energy, mu)
+    unit = energy_unit("keV", energy / 1000.0)
+    result = normalize_edge(energy / 1000.0 * unit.factor, mu)
+    assert result.e0 == pytest.approx(reference.e0, abs=1e-6)
+    assert result.edge_step == pytest.approx(reference.edge_step, rel=1e-9)
+    assert result.pre_range == pytest.approx(reference.pre_range, abs=1e-6)
+    assert result.post_range == pytest.approx(reference.post_range, abs=1e-6)
+    assert result.post_degree == reference.post_degree
+    np.testing.assert_allclose(result.norm, reference.norm, atol=1e-9)

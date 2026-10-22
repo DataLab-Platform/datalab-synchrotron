@@ -11,7 +11,8 @@ compare with the reference analysis software of the field:
   step, and ``norm = (mu - pre_edge) / edge_step``. ``flat`` also removes the
   curvature of the post-edge polynomial above ``E0``.
 
-Energies are in eV.
+Energies are in eV: :func:`energy_unit` tells how to convert energies given in
+another unit, or refuses them.
 """
 
 from __future__ import annotations
@@ -22,13 +23,92 @@ import enum
 import numpy as np
 
 __all__ = [
+    "MAX_EDGE_KEV",
     "Absorption",
     "AbsorptionMode",
     "EdgeNormalization",
+    "EnergyUnit",
     "absorption",
     "edge_energy",
+    "energy_unit",
     "normalize_edge",
 ]
+
+#: Upper bound of X-ray absorption edge energies in keV (uranium K edge: 115.6 keV).
+#: Energies of a spectrum in keV are below it; in eV, they are above it, except for
+#: soft X-ray edges below 150 eV.
+MAX_EDGE_KEV = 150.0
+
+#: Factors converting the supported energy units to eV, by lowercase unit name
+_ENERGY_FACTORS = {"ev": 1.0, "kev": 1000.0}
+
+
+@dataclasses.dataclass(frozen=True)
+class EnergyUnit:
+    """Conversion of the energies of a spectrum to eV.
+
+    Args:
+        factor: factor converting the energies to eV
+        note: remark for the user (assumed unit, conversion), if any
+        doubtful: True if the note asks the user to check the unit
+    """
+
+    factor: float
+    note: str = ""
+    doubtful: bool = False
+
+
+def energy_unit(unit: str | None, energy: np.ndarray) -> EnergyUnit:
+    """Return how to convert energies to eV, from their unit and their values.
+
+    Energies in eV or keV are accepted (unit name in any case). Without a unit,
+    energies are taken as eV if they reach :data:`MAX_EDGE_KEV`, and refused
+    otherwise: they are most likely in keV. Energies in keV beyond
+    :data:`MAX_EDGE_KEV` are refused: they are most likely in eV.
+
+    Args:
+        unit: unit of the energies (empty or None if unknown)
+        energy: energies
+
+    Returns:
+        Conversion of the energies to eV
+
+    Raises:
+        ValueError: with a user-facing message if the energies cannot be converted
+    """
+    name = (unit or "").strip()
+    values = np.asarray(energy, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        raise ValueError("No finite energy")
+    low, high = float(values.min()), float(values.max())
+    if not name:
+        if high < MAX_EDGE_KEV:
+            raise ValueError(
+                f"Energies have no unit, and values up to {high:g} look like keV: "
+                "set the X unit to eV or keV"
+            )
+        return EnergyUnit(1.0, "Energies have no unit: they are taken as eV")
+    factor = _ENERGY_FACTORS.get(name.lower())
+    if factor is None:
+        raise ValueError(
+            f"Energies in '{name}' cannot be used: the X unit must be eV or keV"
+        )
+    if factor != 1.0:
+        if low > MAX_EDGE_KEV:
+            raise ValueError(
+                f"Energies from {low:g} {name} are beyond X-ray absorption edges: "
+                "they are most likely in eV, set the X unit to eV"
+            )
+        return EnergyUnit(factor, f"Energies converted from {name} to eV")
+    if high < MAX_EDGE_KEV:
+        return EnergyUnit(
+            1.0,
+            f"Energies up to {high:g} eV are unusually low: check that the X unit "
+            "is not keV",
+            doubtful=True,
+        )
+    return EnergyUnit(1.0)
 
 
 class AbsorptionMode(enum.Enum):
