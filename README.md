@@ -17,6 +17,8 @@ The readers are written in pure Python: the plugin installs from DataLab's plugi
 
 ## Installation
 
+Python 3.10 or later is required in a Python environment; the standalone DataLab application supplies its own interpreter.
+
 The plugin needs DataLab 1.4 or later (not released yet). Download the wheel (`.whl`) attached to the latest release and install it with **Plugins > Configure plugins... > Install plugins**, or install it with pip in the Python environment of DataLab:
 
 ```bash
