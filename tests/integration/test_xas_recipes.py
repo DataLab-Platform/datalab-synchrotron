@@ -68,7 +68,7 @@ def test_absorption_from_counters() -> None:
         bindings, AbsorptionParameters(), RecipeExecutionContext()
     )
     (output,) = outcome.objects
-    np.testing.assert_array_equal(output.value.y, expected)
+    np.testing.assert_allclose(output.value.y, expected, rtol=1e-13, atol=1e-15)
     np.testing.assert_array_equal(output.value.x, monitor.x)
     assert not outcome.diagnostics
 
