@@ -226,7 +226,8 @@ def test_not_a_spec_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 def _write_scan_file(filename: Path) -> str:
     """Write a time scan laid out as beamline scan files: legacy NXdata counters
-    without axes, Latin-1 and blank units."""
+    without axes, Latin-1 and blank units, and a detector writing a spectrum per
+    point."""
     with h5py.File(filename, "w") as h5file:
         entry = h5file.create_group("scan_00062")
         entry.attrs["NX_class"] = b"NXentry"
@@ -235,11 +236,14 @@ def _write_scan_file(filename: Path) -> str:
         scan["time_1"] = np.array([1.511, 2.126, 2.74])
         scan["time_1"].attrs["long_name"] = b"Time"
         scan["time_1"].attrs["units"] = b"s"
+        scan["time_1"].attrs["axis"] = np.int32(0)
         for index, units in ((1, b" "), (2, b"\xb5m")):
             scan[f"data_{index}"] = np.arange(3.0) + index
             scan[f"data_{index}"].attrs["signal"] = np.int32(index)
             scan[f"data_{index}"].attrs["units"] = np.bytes_(units)
             scan[f"data_{index}"].attrs["long_name"] = f"counter{index}".encode()
+        scan["data_3"] = np.arange(3 * 8, dtype=np.int32).reshape(3, 8)
+        scan["data_3"].attrs["signal"] = np.int32(3)
     return str(filename)
 
 
@@ -272,6 +276,15 @@ def test_scan_counters_mapping(tmp_path: Path) -> None:
             assert mapped["data_1"].yunit == ""
             source = get_experimental_source(signal)
             assert source["details"] == {"mapping": "Scan counters"}
+            # The detector writing a spectrum per point is an image versus time
+            (detector,) = [
+                obj
+                for obj in main.imagepanel.objmodel.get_all_objects()
+                if (get_experimental_source(obj) or {}).get("kind") == "hdf5"
+            ]
+            assert detector.data.shape == (3, 8)
+            np.testing.assert_array_equal(detector.ycoords, [1.511, 2.126, 2.74])
+            assert (detector.ylabel, detector.yunit) == ("Time", "s")
     finally:
         plugin.unregister_hooks()
     names = {mapping.name for mapping in registered_mappings()}
@@ -291,3 +304,52 @@ def test_scan_counters_mapping(tmp_path: Path) -> None:
 def _is_plugin(fmt) -> bool:
     """Return True if a format handler is defined by the plugin."""
     return fmt.__class__.__module__ == formats.__name__
+
+
+def _write_step_scan(filename: Path) -> str:
+    """Write a step scan laid out as recent SOLEIL scan files: legacy axis and
+    primary attributes, time stamps with axis 0, counters and detectors of several
+    ranks all designated as signals."""
+    with h5py.File(filename, "w") as h5file:
+        entry = h5file.create_group("scan_0494")
+        entry.attrs["NX_class"] = b"NXentry"
+        scan = entry.create_group("scan_data")
+        scan.attrs["NX_class"] = b"NXdata"
+        scan["actuator_1_1"] = np.array([-8.0, -7.8, -7.6])
+        scan["actuator_1_1"].attrs.update(axis=np.int32(1), primary=np.int32(1))
+        scan["actuator_1_1"].attrs["long_name"] = b"i06-c-c08/ex/dif-mt_rx.2/position"
+        scan["actuator_1_1"].attrs["units"] = b"\xb0"
+        scan["sensors_rel_timestamps"] = np.array([0.0, 1.1, 2.2])
+        scan["sensors_rel_timestamps"].attrs["axis"] = np.int32(0)
+        scan["data_01"] = np.array([5.0, 9.0, 4.0])
+        scan["data_02"] = np.arange(3 * 16, dtype=np.int32).reshape(3, 16)
+        scan["data_03"] = np.zeros((3, 4, 5), dtype=np.int32)
+        for name in ("data_01", "data_02", "data_03"):
+            scan[name].attrs["signal"] = np.int32(1)
+    return str(filename)
+
+
+def test_step_scan(tmp_path: Path) -> None:
+    """Step scans are imported by DataLab's HDF5 browser without data mapping:
+    counters versus the scanned motor, and detectors with the motor along Y."""
+    filename = _write_step_scan(tmp_path / "step.nxs")
+    with (
+        execenv.context(unattended=True),
+        datalab_test_app_context(console=False, exec_loop=False) as main,
+    ):
+        main.import_h5_file(filename, reset_all=True)
+        signals = [
+            obj
+            for obj in main.signalpanel.objmodel.get_all_objects()
+            if (get_experimental_source(obj) or {}).get("kind") == "nexus"
+        ]
+        (counter,) = signals
+        np.testing.assert_array_equal(counter.x, [-8.0, -7.8, -7.6])
+        assert counter.xunit == "\u00b0"
+        (detector,) = [
+            obj
+            for obj in main.imagepanel.objmodel.get_all_objects()
+            if (get_experimental_source(obj) or {}).get("kind") == "nexus"
+        ]
+        assert detector.data.shape == (3, 16)
+        assert detector.ylabel == "i06-c-c08/ex/dif-mt_rx.2/position"
