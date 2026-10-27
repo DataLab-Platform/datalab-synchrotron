@@ -1,0 +1,10 @@
+Test files of the XDI library, used to validate the XDI reader.
+
+Source: XAS-Data-Interchange, https://github.com/XraySpectroscopy/XAS-Data-Interchange
+Commit: ed21ad5aa3a066f569e13e607679b2542fc93fa7
+Folders: data (nonxafs_*.xdi), baddata (bad_*.xdi, BadFiles.txt)
+License: public domain (Unlicense), as stated in the README of the repository
+
+The files are unchanged. Their SHA-256 are listed in SHA256SUMS and checked by
+the tests (tests/validation/test_xdi_corpus.py). BadFiles.txt describes the
+error of each invalid file and how the XDI library reads it.
