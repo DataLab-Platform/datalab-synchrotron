@@ -26,8 +26,12 @@ def test_same_values_as_silx(tmp_path: Path) -> None:
             assert info.command == expected.scan_header_dict["S"].split(maxsplit=1)[1]
             if expected.data.size:
                 assert np.array_equal(scan.data, expected.data.T)
-            assert len(scan.mca) == len(expected.mca)
-            for index, spectrum in enumerate(scan.mca):
+            # silx lists the spectra of all devices together, and reads the device
+            # number of '@A<n>' lines as a value: compare files with one '@A' device
+            assert set(scan.mca) <= {"mca"}
+            spectra = scan.mca.get("mca", ())
+            assert len(spectra) == len(expected.mca)
+            for index, spectrum in enumerate(spectra):
                 assert np.array_equal(spectrum, expected.mca[index])
             if scan.motors:
                 # silx drops the spaces inside motor names ("sample z")
