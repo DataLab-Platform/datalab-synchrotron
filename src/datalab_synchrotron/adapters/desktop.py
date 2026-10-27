@@ -22,10 +22,11 @@ from ..core import (
     check_scan_selection,
     import_scan,
     is_spec_file,
+    mesh_shape,
     select_scans,
     summarize_skipped,
 )
-from ..formats import unregister_formats
+from ..formats import register_formats, unregister_formats
 from ..mappings import register_mappings, unregister_mappings
 from ..workflow import (
     ABSORPTION_RECIPE,
@@ -36,7 +37,7 @@ from ..workflow import (
 from ..workflow import EXAMPLES as WORKFLOW_EXAMPLES
 from ..workflow import RECIPES as WORKFLOW_RECIPES
 
-#: Number of signals added to the workspace at once by the SPEC import
+#: Number of objects added to the workspace at once by the SPEC import
 ADD_BATCH_SIZE = 200
 
 PLUGIN_ICON = "datalab_synchrotron:icons/synchrotron.svg"
@@ -45,10 +46,17 @@ EXAMPLE_ICON = "datalab_synchrotron:icons/xas_example.svg"
 
 
 def _import_parameters(spec: SpecFile) -> gds.DataSet:
-    """Return the import parameters of a SPEC file, with its columns as choices."""
+    """Return the import parameters of a SPEC file, with its columns and MCA devices
+    as choices.
+
+    The MCA and mesh items are hidden if no scan has MCA spectra or is a mesh scan.
+    """
     labels: list[str] = []
+    devices: list[str] = []
     for info in spec.scans:
         labels.extend(label for label in info.labels if label not in labels)
+        devices.extend(device for device in info.mca_devices if device not in devices)
+    has_mesh = any(mesh_shape(info) is not None for info in spec.scans)
     # Default columns: those of the most frequent scan structure
     structures = collections.Counter(info.labels for info in spec.scans if info.labels)
     first = structures.most_common(1)[0][0] if structures else ("",)
@@ -67,7 +75,17 @@ def _import_parameters(spec: SpecFile) -> gds.DataSet:
         counters = gds.MultipleChoiceItem(
             _("Counters"), choices, default=[first[-1]]
         ).vertical(3)
-        mca = gds.BoolItem(_("MCA spectra"), default=False)
+        mca = gds.MultipleChoiceItem(
+            _("MCA spectra"),
+            [(device, device) for device in devices] or [("", "-")],
+            default=[],
+            help=_("One image per device and scan: one spectrum per row"),
+        ).set_prop("display", hide=not devices)
+        mesh = gds.BoolItem(
+            _("Mesh scans as images"),
+            default=True,
+            help=_("Counters of mesh scans as images of the two motors"),
+        ).set_prop("display", hide=not has_mesh)
 
     return SpecImportParameters(title=osp.basename(spec.path))
 
@@ -124,7 +142,9 @@ class SynchrotronPlugin(PluginBase):
         return self.launch_example(CU_FOIL_EXAMPLE.id)
 
     def register_hooks(self) -> None:
-        """Apply the shipped HDF5 data mappings."""
+        """Register the file formats (again, after an unload) and apply the
+        shipped HDF5 data mappings."""
+        register_formats()
         register_mappings()
 
     def unregister_hooks(self) -> None:
@@ -160,24 +180,25 @@ class SynchrotronPlugin(PluginBase):
                 return 0
             keys = select_scans(spec, param.scans)
             counters = list(param.counters)
-            check_scan_selection(param.x, counters, param.mca)
+            devices = [device for device in param.mca if device]
+            check_scan_selection(param.x, counters, devices)
         except ValueError as exc:
             self.show_error(str(exc))
             return 0
         count, skipped, cancelled = self._add_scans(
-            spec, keys, param.x, counters, param.mca
+            spec, keys, param.x, counters, devices, param.mesh
         )
         report = summarize_skipped(skipped)
         if cancelled:
             self.show_info(
-                _("Import cancelled: %d signal(s) imported.") % count
+                _("Import cancelled: %d object(s) imported.") % count
                 + "".join("\n" + line for line in report)
             )
         elif count == 0:
-            self.show_error(_("No signal was imported:") + "\n" + "\n".join(report))
+            self.show_error(_("Nothing was imported:") + "\n" + "\n".join(report))
         elif skipped:
             self.show_warning(
-                _("Selected columns were not imported from %d of %d scans:")
+                _("Selected data was not imported from %d of %d scans:")
                 % (len(skipped), len(keys))
                 + "\n"
                 + "\n".join(report)
@@ -190,12 +211,15 @@ class SynchrotronPlugin(PluginBase):
         keys: list[str],
         x: str,
         counters: list[str],
-        include_mca: bool,
+        mca_devices: list[str],
+        mesh_as_images: bool,
     ) -> tuple[int, list[SkippedScan], bool]:
-        """Read and add scans one at a time, in a group each, until cancelled.
+        """Read and add scans one at a time, until cancelled: signals in a group of
+        the signal panel, images in a group of the image panel, named after the
+        scan.
 
         Returns:
-            Number of added signals, skipped scans, and True if cancelled
+            Number of added objects, skipped scans, and True if cancelled
         """
         count, skipped = 0, []
         title = _("Importing SPEC scans")
@@ -209,26 +233,31 @@ class SynchrotronPlugin(PluginBase):
                 QW.QApplication.processEvents()
                 if progress.wasCanceled():
                     return count, skipped, True
-                group, reason = import_scan(spec, key, x, counters, include_mca)
+                group, reason = import_scan(
+                    spec, key, x, counters, mca_devices, mesh_as_images
+                )
                 if reason is not None:
                     skipped.append(reason)
                 if group is None:
                     continue
-                group_id = self.proxy.add_group(group.title, panel="signal")
-                signals = group.signals
-                for start in range(0, len(signals), ADD_BATCH_SIZE):
-                    progress.setLabelText(
-                        _("Adding signals of scan %s (%d of %d)")
-                        % (key, start, len(signals))
-                    )
-                    QW.QApplication.processEvents()
-                    if progress.wasCanceled():
-                        return count, skipped, True
-                    batch = signals[start : start + ADD_BATCH_SIZE]
-                    self.signalpanel.add_objects(
-                        batch, group_id=group_id, set_current=False
-                    )
-                    count += len(batch)
+                for panel_name, panel, objects in (
+                    ("signal", self.signalpanel, group.signals),
+                    ("image", self.imagepanel, group.images),
+                ):
+                    if not objects:
+                        continue
+                    group_id = self.proxy.add_group(group.title, panel=panel_name)
+                    for start in range(0, len(objects), ADD_BATCH_SIZE):
+                        progress.setLabelText(
+                            _("Adding objects of scan %s (%d of %d)")
+                            % (key, start, len(objects))
+                        )
+                        QW.QApplication.processEvents()
+                        if progress.wasCanceled():
+                            return count, skipped, True
+                        batch = objects[start : start + ADD_BATCH_SIZE]
+                        panel.add_objects(batch, group_id=group_id, set_current=False)
+                        count += len(batch)
             progress.setValue(len(keys))
         return count, skipped, False
 

@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from support.spec_files import write_spec
+from support.spec_files import MORE_TEXT, write_spec
 
 from datalab_synchrotron.core import (
     SkippedScan,
     SpecFile,
+    import_scan,
     plan_scan_import,
     select_scans,
     summarize_skipped,
@@ -61,18 +62,51 @@ def test_one_group_per_scan(spec: SpecFile) -> None:
         SkippedScan(key, "no column Theta, Monitor, Detector counts")
         for key in ("2.1", "3.1", "4.1")
     )
-    assert plan.signal_count == 4
+    assert plan.object_count == 4
 
 
 def test_mca_only(spec: SpecFile) -> None:
-    """MCA spectra are imported without columns, from the scans that have some."""
-    plan = plan_scan_import(spec, ["3.1", "4.1"], "Energy", [], include_mca=True)
-    assert [len(group.signals) for group in plan.groups] == [1, 3]
-    with pytest.raises(ValueError, match="Select at least one counter"):
+    """MCA spectra are imported without columns, as one image per device, from the
+    scans that have some."""
+    plan = plan_scan_import(spec, ["3.1", "4.1"], "Energy", [], ["mca"])
+    assert [len(group.images) for group in plan.groups] == [1, 1]
+    assert not any(group.signals for group in plan.groups)
+    assert plan.groups[1].images[0].data.shape == (3, 4)
+    with pytest.raises(ValueError, match="Select at least one counter or MCA"):
         plan_scan_import(spec, ["3.1"], "Energy", ["Energy"])
-    message = "No signal to import:\nNo column Energy, I0 \\(scan 1.1\\)"
+    message = "Nothing to import:\nNo column Energy, I0 \\(scan 1.1\\)"
     with pytest.raises(ValueError, match=message):
         plan_scan_import(spec, ["1.1"], "Energy", ["I0"])
+
+
+def test_mesh_scans(tmp_path: Path) -> None:
+    """Counters of mesh scans are images, unless asked otherwise; the X column is
+    then not needed."""
+    more = SpecFile(write_spec(tmp_path / "more.spec", text=MORE_TEXT))
+    group, skipped = import_scan(more, "3.1", "Energy", ["counts"])
+    assert skipped is None and not group.signals
+    assert group.images[0].data.shape == (2, 3)
+    group, _skipped = import_scan(
+        more, "3.1", "Sample X", ["counts"], mesh_as_images=False
+    )
+    assert len(group.signals) == 1 and not group.images
+
+
+def test_unreadable_scan(spec: SpecFile, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A scan that cannot be read is skipped with the error, the others are read."""
+    read_scan = spec.read_scan
+
+    def failing(key: str):
+        if key == "1.2":
+            raise IndexError("list index out of range")
+        return read_scan(key)
+
+    monkeypatch.setattr(spec, "read_scan", failing)
+    plan = plan_scan_import(spec, ["1.1", "1.2"], "Theta", ["Monitor"])
+    assert [group.title for group in plan.groups] == [
+        "Scan 1.1 - ascan  th 1 0.6 4 0.1"
+    ]
+    assert plan.skipped == (SkippedScan("1.2", "unreadable: list index out of range"),)
 
 
 def test_summarize_skipped() -> None:

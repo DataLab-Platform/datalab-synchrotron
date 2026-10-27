@@ -1,19 +1,26 @@
 """Host-independent readers of experimental data formats, and XAS analysis."""
 
 from .convert import (
+    HC_EV_ANGSTROM,
+    MeshShape,
     ScanGroup,
     ScanImport,
     SkippedScan,
     check_scan_selection,
     import_scan,
-    mca_signals,
+    mca_images,
+    mesh_images,
+    mesh_shape,
     plan_scan_import,
+    scan_metadata,
     scan_signals,
     select_scans,
     summarize_skipped,
+    xdi_energy,
+    xdi_metadata,
     xdi_signals,
 )
-from .spec import SpecFile, SpecScan, SpecScanInfo, is_spec_file
+from .spec import SpecFile, SpecScan, SpecScanInfo, is_spec_file, mca_device
 from .xas import (
     MAX_EDGE_KEV,
     Absorption,
@@ -28,11 +35,13 @@ from .xas import (
 from .xdi import XdiColumn, XdiFile, is_xdi_file, read_xdi
 
 __all__ = [
+    "HC_EV_ANGSTROM",
     "MAX_EDGE_KEV",
     "Absorption",
     "AbsorptionMode",
     "EdgeNormalization",
     "EnergyUnit",
+    "MeshShape",
     "ScanGroup",
     "ScanImport",
     "SkippedScan",
@@ -48,12 +57,18 @@ __all__ = [
     "import_scan",
     "is_spec_file",
     "is_xdi_file",
-    "mca_signals",
+    "mca_device",
+    "mca_images",
+    "mesh_images",
+    "mesh_shape",
     "normalize_edge",
     "plan_scan_import",
     "read_xdi",
+    "scan_metadata",
     "scan_signals",
     "select_scans",
     "summarize_skipped",
+    "xdi_energy",
+    "xdi_metadata",
     "xdi_signals",
 ]

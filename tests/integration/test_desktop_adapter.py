@@ -13,13 +13,15 @@ from datalab.control.proxy import LocalProxy
 from datalab.env import execenv
 from datalab.plugins import PluginCapability
 from datalab.tests import datalab_test_app_context
+from sigima.io.signal.base import SignalIORegistry
 from sigima.objects import get_experimental_source
 from sigimax.h5.mapping import registered_mappings
-from support.spec_files import write_spec
+from support.spec_files import MORE_TEXT, write_spec
 
-from datalab_synchrotron import PLUGIN_ID
+from datalab_synchrotron import PLUGIN_ID, formats
 from datalab_synchrotron.adapters import desktop
-from datalab_synchrotron.mappings import packaged_mappings
+from datalab_synchrotron.core import SpecFile
+from datalab_synchrotron.mappings import packaged_mappings, unregister_mappings
 
 
 def test_plugin_descriptor() -> None:
@@ -60,18 +62,42 @@ def _patch_parameters(
     scans: str,
     x: str,
     counters: list[str],
-    mca: bool = False,
+    mca: list[str] | None = None,
+    mesh: bool = True,
 ) -> None:
     """Answer the SPEC import dialog with the given parameters."""
     original = desktop._import_parameters  # pylint: disable=protected-access
 
     def parameters(spec):
         param = original(spec)
-        param.scans, param.x, param.counters, param.mca = scans, x, counters, mca
+        param.scans, param.x, param.counters = scans, x, counters
+        param.mca, param.mesh = mca or [], mesh
         monkeypatch.setattr(param, "edit", lambda **_kwargs: True)
         return param
 
     monkeypatch.setattr(desktop, "_import_parameters", parameters)
+
+
+def test_import_parameters(tmp_path: Path) -> None:
+    """The dialog proposes the MCA devices of the file, and hides the MCA and mesh
+    items when the file has neither MCA spectra nor mesh scans."""
+    param = desktop._import_parameters(  # pylint: disable=protected-access
+        SpecFile(write_spec(tmp_path / "more.spec", text=MORE_TEXT))
+    )
+    items = {item.get_name(): item for item in param.get_items()}
+    mca, mesh = items["mca"], items["mesh"]
+    assert [value for value, *_label in mca.get_prop("data", "choices")] == [
+        "mca1",
+        "mca2",
+    ]
+    assert not mca.get_prop_value("display", param, "hide")
+    assert not mesh.get_prop_value("display", param, "hide")
+    plain = desktop._import_parameters(  # pylint: disable=protected-access
+        SpecFile(write_spec(tmp_path / "plain.spec", text=MORE_TEXT.split("#S 2")[0]))
+    )
+    for item in plain.get_items():
+        if item.get_name() in ("mca", "mesh"):
+            assert item.get_prop_value("display", plain, "hide")
 
 
 def test_import_spec_scans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -111,8 +137,38 @@ def test_skipped_scans_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         monkeypatch.setattr(plugin, "show_warning", warnings.append)
         assert plugin.import_spec_scans(filename) == 2
     assert warnings == [
-        "Selected columns were not imported from 3 of 5 scans:\n"
+        "Selected data was not imported from 3 of 5 scans:\n"
         "No column Theta, Detector counts (3 scans: 2.1, 3.1, 4.1)"
+    ]
+
+
+def test_import_mca_and_mesh_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MCA spectra and mesh scans are imported as images, in a group of the image
+    panel named after the scan."""
+    filename = write_spec(tmp_path / "more.spec", text=MORE_TEXT)
+    _patch_parameters(monkeypatch, "2-3", "Energy", ["counts"], ["mca2"])
+    warnings: list[str] = []
+    with (
+        execenv.context(unattended=True),
+        datalab_test_app_context(console=False, exec_loop=False) as main,
+    ):
+        plugin = desktop.SynchrotronPlugin()
+        plugin.main, plugin.proxy = main, LocalProxy(main)
+        monkeypatch.setattr(plugin, "show_warning", warnings.append)
+        assert plugin.import_spec_scans(filename) == 2
+        image_groups = main.imagepanel.objmodel.get_groups()
+        assert [group.title for group in image_groups[-2:]] == [
+            "Scan 2.1 - ascan en 690 692 2 1",
+            "Scan 3.1 - mesh  samx 0 2 2  samy 11 10 1  1",
+        ]
+        (mca,) = image_groups[-2].get_objects()
+        assert mca.title == "mca2 (scan 2.1)" and mca.data.shape == (3, 4)
+        (mesh,) = image_groups[-1].get_objects()
+        assert mesh.title == "counts (scan 3.1)"
+    assert warnings == [
+        "Selected data was not imported from 1 of 2 scans:\nNo column counts (scan 2.1)"
     ]
 
 
@@ -135,9 +191,9 @@ class _CancellingProgress:
 
 
 def test_cancel_spec_import(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Signals are added in batches, and the import stops when cancelled."""
+    """Objects are added in batches, and the import stops when cancelled."""
     filename = write_spec(tmp_path / "beamtime.dat")
-    _patch_parameters(monkeypatch, "4", "Energy", [], mca=True)
+    _patch_parameters(monkeypatch, "4", "Energy", ["I0", "It"])
     monkeypatch.setattr(desktop, "ADD_BATCH_SIZE", 1)
     progress = _CancellingProgress(checks=3)
     monkeypatch.setattr(
@@ -154,7 +210,7 @@ def test_cancel_spec_import(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         # Checks: before reading scan 4.1, before its 1st and 2nd batch of 1 signal
         assert plugin.import_spec_scans(filename) == 1
         assert len(main.signalpanel.objmodel.get_groups()[-1].get_objects()) == 1
-    assert infos == ["Import cancelled: 1 signal(s) imported."]
+    assert infos == ["Import cancelled: 1 object(s) imported."]
 
 
 def test_not_a_spec_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,11 +243,9 @@ def _write_scan_file(filename: Path) -> str:
     return str(filename)
 
 
-def test_scan_counters_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scan_counters_mapping(tmp_path: Path) -> None:
     """While the plugin is loaded, every scan counter is imported versus time."""
     filename = _write_scan_file(tmp_path / "scan.nxs")
-    # Sigima formats cannot be registered again: they stay for the other tests
-    monkeypatch.setattr(desktop, "unregister_formats", lambda: None)
     plugin = desktop.SynchrotronPlugin()
     plugin.register_hooks()
     try:
@@ -222,3 +276,18 @@ def test_scan_counters_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         plugin.unregister_hooks()
     names = {mapping.name for mapping in registered_mappings()}
     assert not names & {mapping.name for mapping in packaged_mappings()}
+    assert not [fmt for fmt in SignalIORegistry.get_formats() if _is_plugin(fmt)]
+    # Loading the plugin again registers its formats again (kept for other tests)
+    plugin.register_hooks()
+    try:
+        plugin_formats = [
+            fmt for fmt in SignalIORegistry.get_formats() if _is_plugin(fmt)
+        ]
+        assert len(plugin_formats) == 2
+    finally:
+        unregister_mappings()
+
+
+def _is_plugin(fmt) -> bool:
+    """Return True if a format handler is defined by the plugin."""
+    return fmt.__class__.__module__ == formats.__name__

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 import sigima.io
 from sigima.io.signal.base import SignalIORegistry
 from sigima.objects import get_experimental_source
@@ -12,6 +13,7 @@ from support.spec_files import write_spec
 from support.xas_corpus import spectrum
 
 from datalab_synchrotron import formats
+from datalab_synchrotron.core import SpecFile
 
 
 def _spec_formats() -> list:
@@ -33,6 +35,27 @@ def test_open_spec_file(tmp_path: Path) -> None:
     ]
 
 
+def test_open_spec_file_with_unreadable_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scans that cannot be read are left out; a file without readable scan is
+    refused with the first error."""
+    filename = write_spec(tmp_path / "scans.spec")
+    read_scan = SpecFile.read_scan
+
+    def failing(self, key: str):
+        if key != "2.1":
+            raise IndexError("list index out of range")
+        return read_scan(self, key)
+
+    monkeypatch.setattr(SpecFile, "read_scan", failing)
+    signals = sigima.io.read_signals(filename)
+    assert [signal.title for signal in signals] == ["It (scan 2.1)"]
+    monkeypatch.setattr(SpecFile, "read_scan", lambda *_args: [][0])
+    with pytest.raises(ValueError, match=r"holds no readable scan \(scan 1.1: "):
+        sigima.io.read_signals(filename)
+
+
 def test_open_xdi_file() -> None:
     """File > Open reads every column versus the energy, with units and origin."""
     item = spectrum("cu_foil")
@@ -49,11 +72,14 @@ def test_open_xdi_file() -> None:
 
 
 def test_unregister_formats() -> None:
-    """Unloading the plugin removes its formats from Sigima."""
+    """Unloading the plugin removes its formats from Sigima, and loading it again
+    registers them again."""
     assert len(_spec_formats()) == 2
     formats.unregister_formats()
     try:
         assert not _spec_formats()
     finally:
-        registered = SignalIORegistry.get_formats()
-        registered.extend((formats.SpecSignalFormat(), formats.XdiSignalFormat()))
+        formats.register_formats()
+    assert len(_spec_formats()) == 2
+    formats.register_formats()
+    assert len(_spec_formats()) == 2
