@@ -28,6 +28,7 @@ from .xdi import XdiColumn, XdiFile
 
 __all__ = [
     "HC_EV_ANGSTROM",
+    "MESH_POSITION_TOLERANCE",
     "MeshShape",
     "ScanGroup",
     "ScanImport",
@@ -36,6 +37,7 @@ __all__ = [
     "import_scan",
     "mca_images",
     "mesh_images",
+    "mesh_point_indices",
     "mesh_shape",
     "plan_scan_import",
     "scan_metadata",
@@ -52,6 +54,19 @@ HC_EV_ANGSTROM = 12398.419843320026
 
 #: Relative tolerance on the steps of evenly spaced image coordinates
 _UNIFORM_RTOL = 1e-9
+
+#: Largest median deviation from the grid, in steps of each motor, of the motor
+#: positions of the points following data lines that could not be read in a mesh
+#: scan (well below half a step, so that positions off the grid do not fit
+#: several numbers of missing points, which leaves the placement unsure)
+MESH_POSITION_TOLERANCE = 0.35
+
+#: Largest number of points a data line that could not be read may have held
+#: (e.g. two lines written without a newline)
+_POINTS_PER_UNREAD_LINE = 2
+
+#: Why the counters of a mesh scan are imported as signals instead of images
+_MESH_UNSURE = "points cannot be placed after lines that could not be read"
 
 
 def _source(
@@ -135,11 +150,22 @@ def _finish(obj: SignalObj | ImageObj, source: dict, metadata: dict) -> None:
 
 
 def scan_signals(
-    spec: SpecFile, scan: SpecScan, x: str, counters: Sequence[str]
+    spec: SpecFile,
+    scan: SpecScan,
+    x: str,
+    counters: Sequence[str],
+    conversions: Sequence[str] = (),
 ) -> list[SignalObj]:
     """Return one signal per counter of a scan, versus the X column.
 
     Points keep their acquisition order, even if X is not monotonic.
+
+    Args:
+        spec: SPEC file
+        scan: scan read from the file
+        x: X column
+        counters: counter columns
+        conversions: notes recorded in the origin of the signals
 
     Raises:
         ValueError: if a column does not exist
@@ -154,7 +180,7 @@ def scan_signals(
             scan.column(counter).copy(),
             labels=(x, counter),
         )
-        source = _source(spec, scan, {"x": x, "y": counter}, ())
+        source = _source(spec, scan, {"x": x, "y": counter}, conversions)
         _finish(signal, source, metadata)
         signals.append(signal)
     return signals
@@ -266,11 +292,17 @@ class MeshShape:
         columns: number of points along the first motor (fastest)
         rows: number of points along the second motor
         steps: steps of the first and second motors
+        start: start positions of the first and second motors, relative to their
+         positions before the scan if ``relative`` is True
+        relative: True for ``dmesh`` commands (start positions relative to the
+         positions of the motors before the scan)
     """
 
     columns: int
     rows: int
     steps: tuple[float, float]
+    start: tuple[float, float] = (0.0, 0.0)
+    relative: bool = False
 
 
 def mesh_shape(info: SpecScanInfo) -> MeshShape | None:
@@ -297,7 +329,76 @@ def mesh_shape(info: SpecScanInfo) -> MeshShape | None:
     )
     if 0.0 in steps:
         return None
-    return MeshShape(count1 + 1, count2 + 1, steps)
+    return MeshShape(
+        count1 + 1, count2 + 1, steps, (start1, start2), words[0] == "dmesh"
+    )
+
+
+def _grid_cells(indices: np.ndarray, columns: int) -> np.ndarray:
+    """Return the column and row of grid indices, one point per row."""
+    return np.column_stack((indices % columns, indices // columns)).astype(float)
+
+
+def mesh_point_indices(scan: SpecScan, shape: MeshShape) -> np.ndarray | None:
+    """Return the grid index of each point of a mesh scan, or None if unsure.
+
+    Points are placed in acquisition order, the first motor moving fastest.
+    Where data lines could not be read before the last point, each line may have
+    held 0 to 2 points: the number of missing points is the only one for which
+    the motor positions of the points that follow, up to the next lines that
+    could not be read, fit the grid within :data:`MESH_POSITION_TOLERANCE` steps
+    on each motor (median deviation). The grid is the one of the points already
+    placed (median of their deviations), or starts at the start of the command
+    for lines before the first point. Lines before the first point of a
+    ``dmesh`` scan, whose absolute start is unknown, leave the placement unsure.
+
+    Args:
+        scan: mesh scan, whose first two columns hold the positions of the motors
+        shape: grid of the scan
+
+    Returns:
+        Grid index of each point (row-major, ``row * columns + column``), indices
+        beyond the grid standing for points beyond the mesh, or None if the
+        motor positions do not tell how many points are missing
+    """
+    npoints = scan.data.shape[0]
+    lines: dict[int, int] = {}
+    for row in scan.problem_rows:
+        if row < npoints:
+            lines[row] = lines.get(row, 0) + 1
+    if not lines:
+        return np.arange(npoints)
+    if 0 in lines and shape.relative:
+        return None
+    steps = np.asarray(shape.steps, dtype=float)
+    positions = scan.data[:, :2] / steps
+    starts = sorted(set(lines) | {0})
+    indices = np.empty(npoints, dtype=int)
+    for first, stop in zip(starts, starts[1:] + [npoints]):
+        offsets = np.arange(stop - first)
+        if first not in lines:
+            indices[first:stop] = offsets
+            continue
+        if first == 0:
+            origin, base = np.asarray(shape.start, dtype=float) / steps, 0
+        else:
+            placed = _grid_cells(indices[:first], shape.columns)
+            origin = np.median(positions[:first] - placed, axis=0)
+            base = int(indices[first - 1]) + 1
+        segment = positions[first:stop] - origin
+        fits = [
+            missing
+            for missing in range(_POINTS_PER_UNREAD_LINE * lines[first] + 1)
+            if np.median(
+                np.abs(segment - _grid_cells(base + missing + offsets, shape.columns)),
+                axis=0,
+            ).max()
+            <= MESH_POSITION_TOLERANCE
+        ]
+        if len(fits) != 1:
+            return None
+        indices[first:stop] = base + fits[0] + offsets
+    return indices
 
 
 def mesh_images(
@@ -305,36 +406,51 @@ def mesh_images(
 ) -> list[ImageObj]:
     """Return one image per counter of a mesh scan.
 
-    Coordinates start at the motor positions of the first point and follow the
-    steps of the command. Points missing in an interrupted scan are NaN.
+    Coordinates follow the steps of the command from the motor positions of the
+    first point. Points are placed as told by :func:`mesh_point_indices`;
+    points missing in an interrupted scan, or lost in lines that could not be
+    read, are NaN.
 
     Raises:
-        ValueError: if the scan is not a mesh scan, has no data, or has no column
-         of a counter
+        ValueError: if the scan is not a mesh scan, has no data, has no column
+         of a counter, or if its points cannot be placed after lines that could
+         not be read
     """
     shape = mesh_shape(scan.info)
     if shape is None:
         raise ValueError(f"Scan {scan.info.key} is not a mesh scan")
     size = shape.rows * shape.columns
-    count = min(scan.data.shape[0], size)
-    if count == 0:
+    npoints = scan.data.shape[0]
+    if npoints == 0:
         raise ValueError(f"Scan {scan.info.key} has no data")
+    indices = mesh_point_indices(scan, shape)
+    if indices is None:
+        raise ValueError(f"Scan {scan.info.key}: {_MESH_UNSURE}")
+    inside = indices < size
+    placed = int(np.count_nonzero(inside))
+    row0, column0 = divmod(int(indices[0]), shape.columns)
     xlabel, ylabel = scan.info.labels[:2]
-    xvals = scan.data[0, 0] + shape.steps[0] * np.arange(shape.columns)
-    yvals = scan.data[0, 1] + shape.steps[1] * np.arange(shape.rows)
+    xvals = scan.data[0, 0] + shape.steps[0] * (np.arange(shape.columns) - column0)
+    yvals = scan.data[0, 1] + shape.steps[1] * (np.arange(shape.rows) - row0)
     notes = [
         f"points -> {shape.rows} x {shape.columns} image ('{xlabel}' along rows), "
         "coordinates from the first point and the command steps"
     ]
-    if count < size:
-        notes.append(f"incomplete mesh: {size - count} points set to NaN")
-    if scan.data.shape[0] > size:
-        notes.append(f"{scan.data.shape[0] - size} points beyond the mesh ignored")
+    unread = sum(row < npoints for row in scan.problem_rows)
+    if unread:
+        notes.append(
+            f"{unread} lines that could not be read: points placed from the motor "
+            "positions"
+        )
+    if placed < size:
+        notes.append(f"incomplete mesh: {size - placed} points set to NaN")
+    if placed < npoints:
+        notes.append(f"{npoints - placed} points beyond the mesh ignored")
     metadata = scan_metadata(scan)
     images = []
     for counter in counters:
         grid = np.full(size, np.nan)
-        grid[:count] = scan.column(counter)[:count]
+        grid[indices[inside]] = scan.column(counter)[inside]
         conversions = list(notes)
         image = _image(
             f"{counter} (scan {scan.info.key})",
@@ -464,12 +580,23 @@ def _scan_objects(
     mesh_as_images: bool,
 ) -> tuple[list[SignalObj], list[ImageObj], SkippedScan | None]:
     """Return the signals and images of a scan, and why its columns were left out,
-    if so."""
+    if so.
+
+    Counters of a mesh scan whose points cannot be placed (see
+    :func:`mesh_point_indices`) are imported as signals versus X, the reason
+    being reported as for columns left out."""
     key = scan.info.key
     signals: list[SignalObj] = []
     images: list[ImageObj] = []
     skipped = None
-    mesh = mesh_as_images and mesh_shape(scan.info) is not None
+    shape = mesh_shape(scan.info) if mesh_as_images else None
+    unsure = bool(
+        shape is not None
+        and counters
+        and scan.data.shape[0] > 0
+        and mesh_point_indices(scan, shape) is None
+    )
+    mesh = shape is not None and not unsure
     needed = counters if mesh else (x, *counters)
     missing = [name for name in needed if name not in scan.info.labels]
     if counters and missing:
@@ -478,6 +605,10 @@ def _scan_objects(
         skipped = SkippedScan(key, "no data")
     elif counters and mesh:
         images.extend(mesh_images(spec, scan, counters))
+    elif counters and unsure:
+        reason = f"mesh imported as signals: {_MESH_UNSURE}"
+        signals.extend(scan_signals(spec, scan, x, counters, [reason]))
+        skipped = SkippedScan(key, reason)
     elif counters:
         signals.extend(scan_signals(spec, scan, x, counters))
     devices = [device for device in mca_devices if device in scan.mca]
@@ -498,9 +629,10 @@ def import_scan(
     out, if so.
 
     Counters are imported as signals versus X, or as images for mesh scans if
-    ``mesh_as_images`` is True. MCA spectra of the selected devices are imported
-    as images, even if columns are missing. A scan that cannot be read is
-    skipped, with the error.
+    ``mesh_as_images`` is True (as signals, with the reason, if the points of
+    the mesh cannot be placed, see :func:`mesh_point_indices`). MCA spectra of
+    the selected devices are imported as images, even if columns are missing. A
+    scan that cannot be read is skipped, with the error.
     """
     counters = [counter for counter in counters if counter != x]
     try:

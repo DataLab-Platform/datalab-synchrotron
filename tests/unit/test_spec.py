@@ -8,13 +8,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 from sigima.objects import get_experimental_source
-from support.spec_files import MORE_TEXT, write_spec
+from support.spec_files import MESH_TEXT, MORE_TEXT, write_spec
 
 from datalab_synchrotron.core import (
     SpecFile,
     is_spec_file,
     mca_images,
     mesh_images,
+    mesh_point_indices,
     mesh_shape,
     scan_metadata,
     scan_signals,
@@ -31,6 +32,12 @@ def fixture_spec(tmp_path: Path) -> SpecFile:
 def fixture_more(tmp_path: Path) -> SpecFile:
     """Synthetic SPEC file with the conventions of other acquisition programs."""
     return SpecFile(write_spec(tmp_path / "more.spec", text=MORE_TEXT))
+
+
+@pytest.fixture(name="meshes")
+def fixture_meshes(tmp_path: Path) -> SpecFile:
+    """Synthetic SPEC file of mesh scans with data lines that cannot be read."""
+    return SpecFile(write_spec(tmp_path / "mesh.spec", text=MESH_TEXT))
 
 
 def test_index(spec: SpecFile) -> None:
@@ -65,6 +72,7 @@ def test_interrupted_scan(spec: SpecFile) -> None:
     scan = spec.read_scan("2.1")
     assert scan.data.shape == (2, 3)
     assert scan.problems == ("line '2 1': 2 values for 3 columns",)
+    assert scan.problem_rows == (2,)
     assert any("Scan aborted" in line for line in scan.header)
 
 
@@ -209,6 +217,55 @@ def test_mesh_images(more: SpecFile) -> None:
     assert "axis 'Sample Y': reversed to increasing order" in source["conversions"]
     with pytest.raises(ValueError, match="not a mesh scan"):
         mesh_images(more, more.read_scan("2.1"), ["TEY"])
+
+
+@pytest.mark.parametrize(
+    "key, expected",
+    [
+        ("1.1", [[1, np.nan, 3], [4, 5, 6]]),
+        ("2.1", [[1, 2, 3], [4, 5, 6]]),
+        ("3.1", [[4, 5, 6], [1, 2, np.nan]]),
+        ("4.1", [[1, 2, np.nan], [np.nan, 5, 6]]),
+        ("5.1", [[np.nan, 2, 3], [4, 5, 6]]),
+    ],
+)
+def test_mesh_points_after_unread_lines(
+    meshes: SpecFile, key: str, expected: list[list[float]]
+) -> None:
+    """Points following data lines that could not be read are placed from the
+    motor positions: a lost point is NaN instead of shifting the next points,
+    and a lost first point does not shift the coordinates."""
+    (image,) = mesh_images(meshes, meshes.read_scan(key), ["counts"])
+    np.testing.assert_array_equal(image.data, expected)
+    assert (image.x0, image.dx, image.y0, image.dy) == (0, 1, 10, 1)
+    conversions = get_experimental_source(image)["conversions"]
+    assert (
+        "1 lines that could not be read: points placed from the motor positions"
+        in conversions
+    )
+    missing = int(np.isnan(expected).sum())
+    note = f"incomplete mesh: {missing} points set to NaN"
+    assert (note in conversions) == (missing > 0)
+
+
+def test_mesh_point_indices(meshes: SpecFile, more: SpecFile) -> None:
+    """Points are placed in acquisition order without lines that could not be
+    read before the last point; otherwise the motor positions must tell how many
+    points are missing."""
+    scan = more.read_scan("3.1")
+    np.testing.assert_array_equal(
+        mesh_point_indices(scan, mesh_shape(scan.info)), [0, 1, 2, 3, 4]
+    )
+    scan = meshes.read_scan("1.1")
+    assert scan.problem_rows == (1,)
+    np.testing.assert_array_equal(
+        mesh_point_indices(scan, mesh_shape(scan.info)), [0, 2, 3, 4, 5]
+    )
+    for key in ("6.1", "7.1"):
+        scan = meshes.read_scan(key)
+        assert mesh_point_indices(scan, mesh_shape(scan.info)) is None
+        with pytest.raises(ValueError, match="points cannot be placed"):
+            mesh_images(meshes, scan, ["counts"])
 
 
 def test_is_spec_file(tmp_path: Path) -> None:

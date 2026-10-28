@@ -174,6 +174,7 @@ def test_interrupted_scan() -> None:
     incomplete, merged = scan.problems
     assert incomplete.endswith("29 values for 55 columns")
     assert merged.endswith("not numeric")
+    assert scan.problem_rows == (19, 19)
     assert scan.data.shape == (19, 55)
 
 

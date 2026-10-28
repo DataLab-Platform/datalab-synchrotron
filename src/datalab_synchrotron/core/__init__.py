@@ -2,6 +2,7 @@
 
 from .convert import (
     HC_EV_ANGSTROM,
+    MESH_POSITION_TOLERANCE,
     MeshShape,
     ScanGroup,
     ScanImport,
@@ -10,6 +11,7 @@ from .convert import (
     import_scan,
     mca_images,
     mesh_images,
+    mesh_point_indices,
     mesh_shape,
     plan_scan_import,
     scan_metadata,
@@ -37,6 +39,7 @@ from .xdi import XdiColumn, XdiFile, is_xdi_file, read_xdi
 __all__ = [
     "HC_EV_ANGSTROM",
     "MAX_EDGE_KEV",
+    "MESH_POSITION_TOLERANCE",
     "Absorption",
     "AbsorptionMode",
     "EdgeNormalization",
@@ -60,6 +63,7 @@ __all__ = [
     "mca_device",
     "mca_images",
     "mesh_images",
+    "mesh_point_indices",
     "mesh_shape",
     "normalize_edge",
     "plan_scan_import",

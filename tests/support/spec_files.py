@@ -125,6 +125,89 @@ MORE_TEXT = """\
 1 10 5
 """
 
+#: Mesh scans of 2 rows of 3 points (counts 1 to 6 in acquisition order) with
+#: data lines that cannot be read: a lost point (1.1), a line holding no point
+#: (2.1), a lost point at the end of a row with a decreasing second motor and a
+#: position off the grid by 0.3 step (3.1), two points written on one line
+#: (4.1), a lost first point (5.1, ``mesh``; 6.1, ``dmesh``), and a lost line
+#: followed by positions half a step off the grid, which fit no number of
+#: missing points (7.1)
+MESH_TEXT = """\
+#F mesh.spec
+#E 1792483200
+#D Tue Oct 20 13:00:00 2026
+
+#S 1 mesh  samx 0 2 2  samy 10 11 1  1
+#N 3
+#L samx  samy  counts
+0 10 1
+1 10 oops
+2 10 3
+0 11 4
+1 11 5
+2 11 6
+
+#S 2 mesh  samx 0 2 2  samy 10 11 1  1
+#N 3
+#L samx  samy  counts
+0 10 1
+1 10 2
+Scan paused by user
+2 10 3
+0 11 4
+1 11 5
+2 11 6
+
+#S 3 mesh  samx 0 2 2  samy 11 10 1  1
+#N 3
+#L samx  samy  counts
+0 11 1
+1 11 2
+2 11
+0.3 10 4
+1 10 5
+2 10 6
+
+#S 4 mesh  samx 0 2 2  samy 10 11 1  1
+#N 3
+#L samx  samy  counts
+0 10 1
+1 10 2
+2 10 3 0 11 4
+1 11 5
+2 11 6
+
+#S 5 mesh  samx 0 2 2  samy 10 11 1  1
+#N 3
+#L samx  samy  counts
+0 10
+1 10 2
+2 10 3
+0 11 4
+1 11 5
+2 11 6
+
+#S 6 dmesh  samx 0 2 2  samy 10 11 1  1
+#N 3
+#L samx  samy  counts
+0 10
+1 10 2
+2 10 3
+0 11 4
+1 11 5
+2 11 6
+
+#S 7 mesh  samx 0 2 2  samy 10 11 1  1
+#N 3
+#L samx  samy  counts
+0 10 1
+1 10 oops
+1.5 10 3
+0.5 11 4
+1.5 11 5
+2.5 11 6
+"""
+
 
 def write_spec(path: Path, newline: str = "\n", text: str = SPEC_TEXT) -> str:
     """Write a synthetic SPEC file and return its name.

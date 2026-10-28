@@ -111,6 +111,8 @@ class SpecScan:
          device, the empty name standing for all devices
         problems: lines that could not be read as data, with their reason
         ignored: number of ignored ``@`` lines that are not MCA spectra, by prefix
+        problem_rows: number of data points read before each line of
+         ``problems``, in the same order (where points may be missing)
     """
 
     info: SpecScanInfo
@@ -122,6 +124,7 @@ class SpecScan:
     mca_channels: dict[str, tuple[int, int, int, int]]
     problems: tuple[str, ...]
     ignored: dict[str, int] = dataclasses.field(default_factory=dict)
+    problem_rows: tuple[int, ...] = ()
 
     def column(self, label: str) -> np.ndarray:
         """Return the values of a column.
@@ -368,6 +371,7 @@ class SpecFile:
         header: list[str] = [self._lines[section.start]]
         rows: list[list[float]] = []
         problems: list[str] = []
+        problem_rows: list[int] = []
         mca: dict[str, list[np.ndarray]] = {}
         calibration: dict[str, tuple[float, float, float]] = {}
         channels: dict[str, tuple[int, int, int, int]] = {}
@@ -416,11 +420,13 @@ class SpecFile:
                 values = _values(stripped)
             except ValueError:
                 problems.append(f"line '{stripped[:40]}': not numeric")
+                problem_rows.append(len(rows))
                 continue
             if ncols and len(values) != ncols:
                 problems.append(
                     f"line '{stripped[:40]}': {len(values)} values for {ncols} columns"
                 )
+                problem_rows.append(len(rows))
                 continue
             rows.append(values)
         data = np.array(rows, dtype=float).reshape(len(rows), ncols)
@@ -440,4 +446,5 @@ class SpecFile:
             mca_channels=channels,
             problems=tuple(problems),
             ignored=ignored,
+            problem_rows=tuple(problem_rows),
         )

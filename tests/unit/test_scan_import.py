@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from support.spec_files import MORE_TEXT, write_spec
+from sigima.objects import get_experimental_source
+from support.spec_files import MESH_TEXT, MORE_TEXT, write_spec
 
 from datalab_synchrotron.core import (
     SkippedScan,
@@ -90,6 +91,27 @@ def test_mesh_scans(tmp_path: Path) -> None:
         more, "3.1", "Sample X", ["counts"], mesh_as_images=False
     )
     assert len(group.signals) == 1 and not group.images
+
+
+def test_mesh_points_that_cannot_be_placed(tmp_path: Path) -> None:
+    """Counters of a mesh scan whose points cannot be placed after data lines that
+    could not be read are imported as signals versus X, with the reason."""
+    meshes = SpecFile(write_spec(tmp_path / "mesh.spec", text=MESH_TEXT))
+    reason = (
+        "mesh imported as signals: points cannot be placed after lines that "
+        "could not be read"
+    )
+    for key in ("6.1", "7.1"):
+        group, skipped = import_scan(meshes, key, "samx", ["counts"])
+        assert skipped == SkippedScan(key, reason)
+        assert not group.images
+        (signal,) = group.signals
+        assert get_experimental_source(signal)["conversions"] == [reason]
+    group, skipped = import_scan(meshes, "7.1", "Energy", ["counts"])
+    assert group is None and skipped == SkippedScan("7.1", "no column Energy")
+    group, skipped = import_scan(meshes, "1.1", "samx", ["counts"])
+    assert skipped is None and not group.signals
+    assert group.images[0].data.shape == (2, 3)
 
 
 def test_unreadable_scan(spec: SpecFile, monkeypatch: pytest.MonkeyPatch) -> None:
