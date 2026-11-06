@@ -13,13 +13,13 @@ A [DataLab](https://datalab-platform.com/) plugin to read beamline data and anal
 - **Example:** **Open copper foil example** opens the monitor and transmitted counts of a copper foil (Larch examples, MIT license) to try both recipes: E0 is 8980.5 eV, 1.5 eV above the tabulated Cu K edge, and the edge step is 2.73.
 - NeXus files are read by DataLab itself (HDF5 browser), which shows `NXdata` groups as signals or images with their axes, and stacks of images or spectra as frames, including the legacy conventions of recent SOLEIL scans: counters are signals versus the scanned motor, and detectors images or stacks with the motor first. While the plugin is loaded, the HDF5 browser also shows every counter and detector `data_1`, `data_2`... of scan data groups versus the time stamps `time_1` of the points, with its label and units: such groups (time scans of SOLEIL) designate only their first counter, without axis.
 
-The readers are written in pure Python: the plugin installs from DataLab's plugin catalog, including with the standalone version of DataLab, and its core can run in DataLab-Web. silx and spec2nexus are used only by the tests, as reference readers.
+The readers are written in pure Python. The plugin targets DataLab Desktop and does not provide a DataLab-Web adapter. silx and spec2nexus are used only by the tests, as reference readers.
 
 ## Installation
 
 Python 3.10 or later is required in a Python environment; the standalone DataLab application supplies its own interpreter.
 
-The plugin needs DataLab 1.4 or later (not released yet). Download the wheel (`.whl`) attached to the latest release and install it with **Plugins > Configure plugins... > From file**, or install it with pip in the Python environment of DataLab:
+The plugin needs DataLab 1.4 or later. Download the wheel (`.whl`) attached to the latest release and install it with **Plugins > Configure plugins... > From file**, or install it with pip in the Python environment of DataLab:
 
 ```bash
 pip install git+https://github.com/DataLab-Platform/datalab-synchrotron.git

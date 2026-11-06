@@ -1,7 +1,7 @@
 """DataLab plugin package."""
 
 PLUGIN_DESCRIPTION = (
-    "Example plugin: read beamline data (SPEC scans, MCA spectra, XDI files) and "
+    "Demonstration plugin: read beamline data (SPEC scans, MCA spectra, XDI files) and "
     "analyze X-ray absorption spectra in DataLab"
 )
 PLUGIN_ID = "org.datalab.synchrotron"
