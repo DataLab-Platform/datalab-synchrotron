@@ -13,7 +13,7 @@ python -m pytest
 
 ## Continuous Integration
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the same checks on Linux and Windows for each push to `develop` or `main` and each pull request, including the validation tests against silx and the frozen Larch results (Larch itself is not needed). It uses the published DataLab 1.4.0, Sigima 1.4.0 and SigimaX 1.1.0 by default; a manual run can select a development branch with the optional `stack-ref` input. A release tag runs these checks before attaching the wheel.
+GitHub Actions (`.github/workflows/ci.yml`) runs the same checks on Linux and Windows for each push to `develop` or `main` and each pull request, including the validation tests against silx and the frozen Larch results (Larch itself is not needed). It uses the published DataLab 1.4.0, Sigima 1.4.0 and SigimaX 1.1.0 by default; a manual run can select a development branch with the optional `stack-ref` input. A release tag runs these checks before the draft release is prepared (see [RELEASING.md](RELEASING.md)).
 
 ## Trying the Plugin in DataLab
 
@@ -48,4 +48,4 @@ Test data stays in this repository: these formats are read by the plugin, not by
 
 ## Branches
 
-Day-to-day work lands on `develop`, the default branch: open pull requests against it. `main` is the release branch, created at the first release; after that, `develop` is merged into `main` only to cut a release.
+Day-to-day work lands on `develop`, the default branch: open pull requests against it. `main` is the release branch: `develop` is merged into `main` only to cut a release (see [RELEASING.md](RELEASING.md)).
