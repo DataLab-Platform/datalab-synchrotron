@@ -6,7 +6,7 @@ PLUGIN_DESCRIPTION = (
 )
 PLUGIN_ID = "org.datalab.synchrotron"
 PLUGIN_NAME = "Synchrotron Beamline Data"
-__version__ = "0.1.0"
+__version__ = "0.1.1rc1"
 
 __all__ = [
     "PLUGIN_DESCRIPTION",

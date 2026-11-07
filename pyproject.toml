@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "datalab-synchrotron"
-version = "0.1.0"
+version = "0.1.1rc1"
 description = "Demonstration DataLab plugin: read beamline data (SPEC scans, MCA spectra, XDI files) and analyze X-ray absorption spectra"
 readme = "README.md"
 license = "BSD-3-Clause"
